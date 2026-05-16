@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface ExampleQuery {
   domain: string;
@@ -458,6 +458,13 @@ function ToolPart({ part }: { part: unknown }) {
 
 function EditableCode({ initialCode }: { initialCode: string }) {
   const [code, setCode] = useState(initialCode);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!dirty) {
+      setCode(initialCode);
+    }
+  }, [initialCode, dirty]);
 
   return (
     <details className="border-t border-[var(--border)]">
@@ -466,7 +473,10 @@ function EditableCode({ initialCode }: { initialCode: string }) {
       </summary>
       <textarea
         value={code}
-        onChange={(e) => setCode(e.target.value)}
+        onChange={(e) => {
+          setDirty(true);
+          setCode(e.target.value);
+        }}
         spellCheck={false}
         className="min-h-80 w-full resize-y border-0 border-t border-[var(--border)] bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
       />
@@ -565,6 +575,11 @@ interface CircuitGate {
 
 function CircuitPreview({ code }: { code: string }) {
   const [gates, setGates] = useState(() => parseCircuitGates(code));
+
+  useEffect(() => {
+    setGates(parseCircuitGates(code));
+  }, [code]);
+
   const qubits = Math.max(1, ...gates.flatMap((gate) => gate.targets), 0) + 1;
 
   if (gates.length === 0) {
