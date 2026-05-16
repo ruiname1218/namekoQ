@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,10 @@ export async function runQiskit(code: string): Promise<RunResult> {
   const started = Date.now();
   const dir = await mkdtemp(join(tmpdir(), "namekoq-"));
   const file = join(dir, "main.py");
+  const mplConfigDir = join(dir, "mplconfig");
+  const xdgCacheHome = join(dir, "cache");
+  await mkdir(mplConfigDir, { recursive: true });
+  await mkdir(xdgCacheHome, { recursive: true });
   await writeFile(file, code, "utf8");
 
   const python = process.env.PYTHON_BIN ?? "python3";
@@ -32,7 +36,12 @@ export async function runQiskit(code: string): Promise<RunResult> {
     const result = await new Promise<RunResult>((resolve) => {
       const child = spawn(python, [file], {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+        env: {
+          ...process.env,
+          PYTHONUNBUFFERED: "1",
+          MPLCONFIGDIR: process.env.MPLCONFIGDIR ?? mplConfigDir,
+          XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? xdgCacheHome,
+        },
       });
 
       let stdout = "";

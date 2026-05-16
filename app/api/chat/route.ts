@@ -22,7 +22,7 @@ const CRITIC_MODEL_ID = process.env.NAMEKOQ_CRITIC_MODEL ?? MODEL_ID;
 const requestPlanTool = tool({
   description: [
     "ユーザー要望から量子計算の実行計画を構造化して提出する (コミットメントポイント)。",
-    "simulate_qiskit を呼ぶ前に **必ず最初に** これを通すこと。",
+    "simulate_qiskit / simulate_pennylane / simulate_cirq のいずれかを呼ぶ前に **必ず最初に** これを通すこと。",
     "Zodスキーマで型・enum・単位・範囲が機械的にチェックされる。スキーマ違反のときはツール呼び出し自体が失敗するので、エラーを見て直して再提出する。",
     "意味的な妥当性 (アルゴリズム選択の良し悪し、パラメータの物理的妥当性等) は verify_intent_alignment で後段に判定される。",
   ].join("\n"),
@@ -37,47 +37,84 @@ const requestPlanTool = tool({
     );
     return {
       plan,
-      next: "計画を受理しました。この plan に沿って選択された framework の Python コードを書き、simulate_qiskit を呼んでください。",
+      next: "計画を受理しました。この plan に沿って選択された framework の Python コードを書き、対応する simulate tool を呼んでください。",
     };
   },
 });
 
-const simulateQiskitTool = tool({
-  description: [
-    "Pythonで量子計算コードを実行し、結果を返す。framework は plan.framework に従う。",
-    "qiskit の場合は Qiskit + Aer、pennylane の場合は PennyLane、cirq の場合は Cirq のコードを実行する。",
-    "注意: ローカルPython環境に選択frameworkがインストールされていない場合は import error になる。その場合はユーザーに依存関係不足を説明する。",
-    "コードは標準出力の最後に JSON 互換の dict を print(...) すること。",
-    "例: print({'energy': -1.137, 'params': [0.1, 0.2]})",
-  ].join("\n"),
-  inputSchema: z.object({
-    code: z
-      .string()
-      .min(1)
-      .describe("実行するPythonコード全文 (plan.framework で選んだ framework を使用)"),
-    purpose: z
-      .string()
-      .describe("このシミュレーションで何を確認したいか (短く)"),
-  }),
-  execute: async ({ code, purpose }) => {
-    const started = Date.now();
-    console.log("[simulate_qiskit] purpose=", purpose);
-    const result = await runQiskit(code);
-    console.log(
-      "[simulate_qiskit] ok=%s ms=%d stderr_len=%d",
-      result.ok,
-      result.durationMs,
-      result.stderr.length,
-    );
-    return {
-      ok: result.ok,
-      durationMs: result.durationMs,
-      stdout: result.stdout.slice(-4000),
-      stderr: result.stderr.slice(-4000),
-      parsed: result.parsed ?? null,
-      totalMs: Date.now() - started,
-    };
-  },
+const simulationInputSchema = z.object({
+  code: z.string().min(1).describe("実行するPythonコード全文"),
+  purpose: z
+    .string()
+    .describe("このシミュレーションで何を確認したいか (短く)"),
+});
+
+function createSimulationTool({
+  name,
+  framework,
+  simulator,
+  codeRule,
+}: {
+  name: string;
+  framework: "qiskit" | "pennylane" | "cirq";
+  simulator: string;
+  codeRule: string;
+}) {
+  return tool({
+    description: [
+      `${framework} 用の Python コードを ${simulator} で実行し、結果を返す。`,
+      `plan.framework が "${framework}" の場合だけこの tool を使うこと。`,
+      codeRule,
+      "コードは標準出力の最後に JSON 互換の dict を print(...) すること。",
+      "例: print({'counts': {'00': 512, '11': 512}, 'shots': 1024})",
+      "注意: 別frameworkのコードや変換コードをこの tool に渡してはいけない。",
+    ].join("\n"),
+    inputSchema: simulationInputSchema,
+    execute: async ({ code, purpose }) => {
+      const started = Date.now();
+      console.log("[%s] purpose=%s", name, purpose);
+      const result = await runQiskit(code);
+      console.log(
+        "[%s] ok=%s ms=%d stderr_len=%d",
+        name,
+        result.ok,
+        result.durationMs,
+        result.stderr.length,
+      );
+      return {
+        ok: result.ok,
+        durationMs: result.durationMs,
+        stdout: result.stdout.slice(-4000),
+        stderr: result.stderr.slice(-4000),
+        parsed: result.parsed ?? null,
+        totalMs: Date.now() - started,
+      };
+    },
+  });
+}
+
+const simulateQiskitTool = createSimulationTool({
+  name: "simulate_qiskit",
+  framework: "qiskit",
+  simulator: "AerSimulator / qiskit-aer primitives",
+  codeRule:
+    "Qiskit + qiskit-aer のコードだけを渡すこと。AerSimulator、EstimatorV2、SamplerV2 などを使う。",
+});
+
+const simulatePennyLaneTool = createSimulationTool({
+  name: "simulate_pennylane",
+  framework: "pennylane",
+  simulator: "default.qubit / lightning.qubit",
+  codeRule:
+    "PennyLane のコードだけを渡すこと。qml.device('default.qubit' または 'lightning.qubit') と @qml.qnode を使う。",
+});
+
+const simulateCirqTool = createSimulationTool({
+  name: "simulate_cirq",
+  framework: "cirq",
+  simulator: "cirq.Simulator",
+  codeRule:
+    "Cirq のコードだけを渡すこと。cirq.Circuit、cirq.LineQubit、cirq.Simulator を使う。",
 });
 
 const verdictSchema = z.object({
@@ -105,8 +142,8 @@ const verdictSchema = z.object({
 const verifyIntentTool = tool({
   description: [
     "ユーザー要望と生成コード/実行結果が一致しているかを別人格のクリティックLLMに判定させる。",
-    "simulate_qiskit が ok=true で結果が出た後、ユーザーに最終回答する前に **必ず** 呼ぶこと。",
-    "aligned=false が返ったら、suggestions を参考にコードを修正して再度 simulate_qiskit してから、再度このツールで検証する。",
+    "simulate_qiskit / simulate_pennylane / simulate_cirq の対応toolが ok=true で結果を返した後、ユーザーに最終回答する前に **必ず** 呼ぶこと。",
+    "aligned=false が返ったら、suggestions を参考にコードを修正して再度対応する simulate tool を呼び、その後再度このツールで検証する。",
   ].join("\n"),
   inputSchema: z.object({
     userRequest: z
@@ -205,6 +242,8 @@ export async function POST(req: Request) {
       tools: {
         request_plan: requestPlanTool,
         simulate_qiskit: simulateQiskitTool,
+        simulate_pennylane: simulatePennyLaneTool,
+        simulate_cirq: simulateCirqTool,
         verify_intent_alignment: verifyIntentTool,
       },
       stopWhen: stepCountIs(10),

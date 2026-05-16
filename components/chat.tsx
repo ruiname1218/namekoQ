@@ -296,7 +296,7 @@ interface ToolPartShape {
 }
 
 interface ActivityStep {
-  id: "request_plan" | "simulate_qiskit" | "verify_intent_alignment";
+  id: "request_plan" | "simulate" | "verify_intent_alignment";
   title: string;
   detail: string;
   state: "waiting" | "active" | "done" | "error";
@@ -926,9 +926,9 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
       state: "waiting",
     },
     {
-      id: "simulate_qiskit",
+      id: "simulate",
       title: "Simulate",
-      detail: "Qiskitコードを生成してローカルAerで実行",
+      detail: "選択frameworkのシミュレータで実行",
       state: "waiting",
     },
     {
@@ -947,9 +947,10 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
     .map((part) => part as ToolPartShape);
 
   for (const step of base) {
-    const part = [...toolParts]
-      .reverse()
-      .find((candidate) => candidate.type === `tool-${step.id}`);
+    const part = [...toolParts].reverse().find((candidate) => {
+      if (step.id === "simulate") return isSimulationToolType(candidate.type);
+      return candidate.type === `tool-${step.id}`;
+    });
     if (!part) continue;
 
     if (part.errorText || part.state === "output-error") {
@@ -959,7 +960,7 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
 
     if (step.id === "request_plan") {
       step.state = part.output?.plan ? "done" : "active";
-    } else if (step.id === "simulate_qiskit") {
+    } else if (step.id === "simulate") {
       step.state =
         part.output?.ok === true
           ? "done"
@@ -986,11 +987,23 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
 
 function getToolLabel(toolName: string): string {
   if (toolName === "request_plan") return "01 / request_plan";
-  if (toolName === "simulate_qiskit") return "02 / simulate_qiskit";
+  if (toolName === "simulate_qiskit") return "02 / simulate_qiskit / Aer";
+  if (toolName === "simulate_pennylane") {
+    return "02 / simulate_pennylane / default.qubit";
+  }
+  if (toolName === "simulate_cirq") return "02 / simulate_cirq / Simulator";
   if (toolName === "verify_intent_alignment") {
     return "03 / verify_intent_alignment";
   }
   return toolName;
+}
+
+function isSimulationToolType(type: string): boolean {
+  return (
+    type === "tool-simulate_qiskit" ||
+    type === "tool-simulate_pennylane" ||
+    type === "tool-simulate_cirq"
+  );
 }
 
 function withAdvancedSettings(

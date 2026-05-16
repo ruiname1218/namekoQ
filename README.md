@@ -26,17 +26,21 @@
 npm install
 ```
 
-### 2. Python + Qiskit を入れる
+### 2. Python + 量子計算フレームワークを入れる
 
-Aerシミュレータをローカルで動かすため Python 3.10+ が必要です。
+Qiskit / PennyLane / Cirq のローカルシミュレータを動かすため Python 3.10+ が必要です。
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install qiskit qiskit-aer scipy numpy
+pip install -r requirements.txt
 ```
 
 `.venv` を使う場合は `.env.local` の `PYTHON_BIN` を venv の python に向けてください。
+
+```bash
+PYTHON_BIN=/path/to/namekoQ/.venv/bin/python
+```
 
 ### 3. OpenAI API キーを設定
 
