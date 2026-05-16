@@ -2,7 +2,9 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+
+const chatTransport = new DefaultChatTransport({ api: "/api/chat" });
 
 interface ExampleQuery {
   domain: string;
@@ -17,7 +19,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
   const [shots, setShots] = useState("auto");
   const [maxIterations, setMaxIterations] = useState("auto");
   const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    transport: chatTransport,
   });
 
   const busy = status === "submitted" || status === "streaming";
@@ -457,14 +459,16 @@ function ToolPart({ part }: { part: unknown }) {
 }
 
 function EditableCode({ initialCode }: { initialCode: string }) {
-  const [code, setCode] = useState(initialCode);
-  const [dirty, setDirty] = useState(false);
+  const [editedCode, setEditedCode] = useState<string | null>(null);
+  const lastInitialRef = useRef(initialCode);
 
-  useEffect(() => {
-    if (!dirty) {
-      setCode(initialCode);
-    }
-  }, [initialCode, dirty]);
+  // initialCode が変わったら編集内容をリセット (setState なし = 再レンダー不発生)
+  if (lastInitialRef.current !== initialCode) {
+    lastInitialRef.current = initialCode;
+    if (editedCode !== null) setEditedCode(null);
+  }
+
+  const code = editedCode ?? initialCode;
 
   return (
     <details className="border-t border-[var(--border)]">
@@ -473,10 +477,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
       </summary>
       <textarea
         value={code}
-        onChange={(e) => {
-          setDirty(true);
-          setCode(e.target.value);
-        }}
+        onChange={(e) => setEditedCode(e.target.value)}
         spellCheck={false}
         className="min-h-80 w-full resize-y border-0 border-t border-[var(--border)] bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
       />
@@ -574,11 +575,14 @@ interface CircuitGate {
 }
 
 function CircuitPreview({ code }: { code: string }) {
-  const [gates, setGates] = useState(() => parseCircuitGates(code));
+  const parsedGates = useMemo(() => parseCircuitGates(code), [code]);
 
-  useEffect(() => {
-    setGates(parseCircuitGates(code));
-  }, [code]);
+  // ドラッグ並び替え用のローカルオーバーライド
+  const [overrides, setOverrides] = useState<CircuitGate[] | null>(null);
+  const prevCodeRef = useMemo(() => ({ current: code }), [code]);
+
+  // code が変わったらオーバーライドをリセット (useEffect 不要: useMemo で参照が変わるだけ)
+  const gates = overrides && prevCodeRef.current === code ? overrides : parsedGates;
 
   const qubits = Math.max(1, ...gates.flatMap((gate) => gate.targets), 0) + 1;
 
@@ -592,12 +596,10 @@ function CircuitPreview({ code }: { code: string }) {
 
   const moveGate = (from: number, to: number) => {
     if (from === to) return;
-    setGates((current) => {
-      const next = [...current];
-      const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
-      return next;
-    });
+    const next = [...gates];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    setOverrides(next);
   };
 
   return (
