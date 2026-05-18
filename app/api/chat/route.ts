@@ -18,6 +18,7 @@ export const maxDuration = 300;
 
 const MODEL_ID = process.env.NAMEKOQ_MODEL ?? "gpt-5.5";
 const CRITIC_MODEL_ID = process.env.NAMEKOQ_CRITIC_MODEL ?? MODEL_ID;
+const OPENQASM_MODEL_ID = process.env.NAMEKOQ_OPENQASM_MODEL ?? MODEL_ID;
 
 const requestPlanTool = tool({
   description: [
@@ -157,10 +158,10 @@ const verifyIntentTool = tool({
     ),
     generatedCode: z
       .string()
-      .describe("simulate_qiskit に渡した実際のコード全文"),
+      .describe("対応する simulate tool に渡した実際のコード全文"),
     result: z
       .unknown()
-      .describe("simulate_qiskit の parsed 結果 (JSON互換の値)"),
+      .describe("対応する simulate tool の parsed 結果 (JSON互換の値)"),
   }),
   execute: async ({
     userRequest,
@@ -230,6 +231,303 @@ const verifyIntentTool = tool({
   },
 });
 
+const openQasmPreparationSchema = z.object({
+  extractionCode: z
+    .string()
+    .min(1)
+    .describe("FINAL_CIRCUIT を定義する、OpenQASM抽出専用のPythonコード"),
+  notes: z
+    .array(z.string())
+    .describe("抽出コードが表現している範囲と制約。なければ空配列"),
+});
+
+const openQasmInputSchema = z.object({
+  framework: z.enum(["qiskit", "pennylane", "cirq"]),
+  generatedCode: z.string().min(1).describe("実行・検証済みの最終Pythonコード"),
+  plan: PlanSchema.describe("request_plan で受理された計画"),
+  result: z.unknown().describe("simulate tool の parsed 結果"),
+});
+
+const convertToOpenQasmTool = tool({
+  description: [
+    "実行・検証済みの最終コードから OpenQASM を抽出する。",
+    "verify_intent_alignment が aligned=true になった後、ユーザーに最終回答する前に呼ぶこと。",
+    "このtool内部でLLMが最終コードとは別の OpenQASM 抽出専用 Python コードを作る。",
+    "OpenQASM 文字列そのものは LLM が書かず、framework の公式APIで機械的に出力する。",
+    "メインの最終コードを OpenQASM 変換しやすい形へ制限してはいけない。",
+  ].join("\n"),
+  inputSchema: openQasmInputSchema,
+  execute: async ({ framework, generatedCode, plan, result }) => {
+    const started = Date.now();
+    console.log("[convert_to_openqasm] framework=%s", framework);
+
+    try {
+      const { experimental_output: prepared } = await generateText({
+        model: openai(OPENQASM_MODEL_ID),
+        output: Output.object({ schema: openQasmPreparationSchema }),
+        system: [
+          "あなたは量子コードからOpenQASM抽出用コードを作るエンジニアです。",
+          "OpenQASM文字列を直接書いてはいけません。Pythonコードだけを書いてください。",
+          "目的は、元の最終コードとは別に、OpenQASMへ機械変換できる回路オブジェクトを FINAL_CIRCUIT として定義することです。",
+          "ユーザーの答えを出すための最終コードを単純化・置換するのではなく、実際に使われた主要回路、ansatz、または測定回路を抽出してください。",
+          "VQE/QAOAなどで古典最適化・Hamiltonian・後処理がある場合、それらはOpenQASMに含められません。量子回路部分だけを抽出し、その制約をnotesに書いてください。",
+          "コードは単体実行可能にし、printやファイルI/Oやpip installは書かないでください。",
+          "qiskitなら FINAL_CIRCUIT は qiskit.QuantumCircuit。",
+          "cirqなら FINAL_CIRCUIT は cirq.Circuit。",
+          "pennylaneなら FINAL_CIRCUIT は引数なしで実行できる qml.QNode にしてください。",
+        ].join("\n"),
+        prompt: [
+          "## framework",
+          framework,
+          "",
+          "## plan",
+          "```json",
+          JSON.stringify(plan, null, 2),
+          "```",
+          "",
+          "## simulate parsed result",
+          "```json",
+          JSON.stringify(result, null, 2),
+          "```",
+          "",
+          "## final generated code",
+          "```python",
+          generatedCode,
+          "```",
+          "",
+          "この最終コードとは別に、OpenQASM抽出専用コードを作ってください。",
+          "必ず FINAL_CIRCUIT を定義してください。",
+        ].join("\n"),
+      });
+
+      const conversionCode =
+        prepared.extractionCode.trim() +
+        "\n\n" +
+        createOpenQasmPostlude(framework);
+      const run = await runQiskit(conversionCode);
+      const parsed = isRecord(run.parsed) ? run.parsed : {};
+      const openqasm =
+        typeof parsed.openqasm === "string" ? parsed.openqasm : undefined;
+      const openqasmError =
+        typeof parsed.openqasm_error === "string"
+          ? parsed.openqasm_error
+          : undefined;
+      const openqasmVersion =
+        typeof parsed.openqasm_version === "string"
+          ? parsed.openqasm_version
+          : undefined;
+      const editorOpenqasm =
+        typeof parsed.editor_openqasm === "string"
+          ? parsed.editor_openqasm
+          : openqasmVersion === "2.0"
+            ? openqasm
+            : undefined;
+
+      return {
+        ok: run.ok && Boolean(openqasm),
+        durationMs: Date.now() - started,
+        framework,
+        openqasm: openqasm ?? null,
+        openqasmVersion: openqasmVersion ?? null,
+        editorOpenqasm: editorOpenqasm ?? null,
+        openqasmError: openqasmError ?? null,
+        convertedFrameworkCodes: openqasm
+          ? createFrameworkConversionCodes({
+              sourceFramework: framework,
+              openqasm,
+              openqasmVersion,
+            })
+          : {},
+        extractionCode: prepared.extractionCode,
+        notes: prepared.notes,
+        stdout: run.stdout.slice(-4000),
+        stderr: run.stderr.slice(-4000),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        durationMs: Date.now() - started,
+        framework,
+        openqasm: null,
+        openqasmVersion: null,
+        editorOpenqasm: null,
+        openqasmError: err instanceof Error ? err.message : String(err),
+        convertedFrameworkCodes: {},
+        extractionCode: "",
+        notes: ["OpenQASM抽出コードの生成または実行に失敗しました。"],
+        stdout: "",
+        stderr: "",
+      };
+    }
+  },
+});
+
+function createFrameworkConversionCodes({
+  sourceFramework,
+  openqasm,
+  openqasmVersion,
+}: {
+  sourceFramework: "qiskit" | "pennylane" | "cirq";
+  openqasm: string;
+  openqasmVersion: string | undefined;
+}) {
+  const targets = ["qiskit", "pennylane", "cirq"] as const;
+  return Object.fromEntries(
+    targets
+      .filter((target) => target !== sourceFramework)
+      .map((target) => [
+        target,
+        createFrameworkConversionCode({
+          target,
+          openqasm,
+          openqasmVersion,
+        }),
+      ]),
+  );
+}
+
+function createFrameworkConversionCode({
+  target,
+  openqasm,
+  openqasmVersion,
+}: {
+  target: "qiskit" | "pennylane" | "cirq";
+  openqasm: string;
+  openqasmVersion: string | undefined;
+}) {
+  const qasmLiteral = JSON.stringify(openqasm);
+  const isQasm3 =
+    openqasmVersion === "3.0" || openqasm.trimStart().startsWith("OPENQASM 3");
+
+  if (target === "qiskit") {
+    return `
+from qiskit import qasm2, qasm3
+from qiskit_aer import AerSimulator
+
+openqasm = ${qasmLiteral}
+
+qc = ${isQasm3 ? "qasm3.loads(openqasm)" : "qasm2.loads(openqasm)"}
+
+simulator = AerSimulator()
+result = simulator.run(qc, shots=1024).result()
+counts = result.get_counts()
+print({"counts": counts})
+`.trim();
+  }
+
+  if (target === "pennylane") {
+    return `
+import re
+import pennylane as qml
+
+openqasm = ${qasmLiteral}
+
+def infer_wires(qasm: str) -> int:
+    qasm2 = re.search(r"qreg\\s+\\w+\\[(\\d+)\\]", qasm)
+    if qasm2:
+        return int(qasm2.group(1))
+    qasm3 = re.search(r"qubit\\[(\\d+)\\]\\s+\\w+", qasm)
+    if qasm3:
+        return int(qasm3.group(1))
+    return 1
+
+quantum_fn = ${isQasm3 ? "qml.from_qasm3(openqasm)" : "qml.from_qasm(openqasm)"}
+n_wires = infer_wires(openqasm)
+dev = qml.device("default.qubit", wires=n_wires)
+
+@qml.qnode(dev)
+def circuit():
+    quantum_fn()
+    return qml.probs(wires=range(n_wires))
+
+probs = circuit()
+print({"probabilities": probs.tolist(), "wires": n_wires})
+`.trim();
+  }
+
+  return `
+# Requires cirq-core plus the optional parser dependency:
+#   pip install ply
+import cirq
+from cirq.contrib.qasm_import import circuit_from_qasm
+
+openqasm = ${qasmLiteral}
+
+if openqasm.lstrip().startswith("OPENQASM 3"):
+    from qiskit import qasm2, qasm3
+    openqasm = qasm2.dumps(qasm3.loads(openqasm))
+
+circuit = circuit_from_qasm(openqasm)
+simulator = cirq.Simulator()
+result = simulator.run(circuit, repetitions=1024)
+print({"measurements": {k: v.tolist() for k, v in result.measurements.items()}})
+`.trim();
+}
+
+function createOpenQasmPostlude(framework: "qiskit" | "pennylane" | "cirq") {
+  return `
+import json as __namekoq_json
+
+__namekoq_payload = {
+    "openqasm": None,
+    "openqasm_version": None,
+    "editor_openqasm": None,
+    "openqasm_error": None,
+}
+
+try:
+    __namekoq_circuit = globals().get("FINAL_CIRCUIT")
+    if __namekoq_circuit is None:
+        raise ValueError("FINAL_CIRCUIT is not defined")
+
+    if ${JSON.stringify(framework)} == "qiskit":
+        from qiskit import QuantumCircuit as __NamekoQQuantumCircuit
+        from qiskit import qasm2 as __namekoq_qasm2
+        from qiskit import qasm3 as __namekoq_qasm3
+        if not isinstance(__namekoq_circuit, __NamekoQQuantumCircuit):
+            raise TypeError("FINAL_CIRCUIT must be a qiskit.QuantumCircuit")
+        __namekoq_payload["openqasm"] = __namekoq_qasm3.dumps(__namekoq_circuit)
+        __namekoq_payload["openqasm_version"] = "3.0"
+        try:
+            __namekoq_payload["editor_openqasm"] = __namekoq_qasm2.dumps(__namekoq_circuit)
+        except Exception:
+            __namekoq_payload["editor_openqasm"] = None
+
+    elif ${JSON.stringify(framework)} == "cirq":
+        import cirq as __namekoq_cirq
+        if not isinstance(__namekoq_circuit, __namekoq_cirq.Circuit):
+            raise TypeError("FINAL_CIRCUIT must be a cirq.Circuit")
+        __namekoq_payload["openqasm"] = __namekoq_circuit.to_qasm()
+        __namekoq_payload["openqasm_version"] = "2.0"
+        __namekoq_payload["editor_openqasm"] = __namekoq_payload["openqasm"]
+
+    elif ${JSON.stringify(framework)} == "pennylane":
+        import pennylane as __namekoq_qml
+        __namekoq_converter = __namekoq_qml.to_openqasm(__namekoq_circuit)
+        __namekoq_payload["openqasm"] = (
+            __namekoq_converter()
+            if callable(__namekoq_converter)
+            else __namekoq_converter
+        )
+        __namekoq_payload["openqasm_version"] = "2.0"
+        __namekoq_payload["editor_openqasm"] = __namekoq_payload["openqasm"]
+
+    else:
+        raise ValueError("unsupported framework")
+
+except Exception as __namekoq_err:
+    __namekoq_payload["openqasm_error"] = (
+        type(__namekoq_err).__name__ + ": " + str(__namekoq_err)
+    )
+
+print(__namekoq_json.dumps(__namekoq_payload))
+`.trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function POST(req: Request) {
   try {
     const { messages }: { messages: UIMessage[] } = await req.json();
@@ -245,8 +543,9 @@ export async function POST(req: Request) {
         simulate_pennylane: simulatePennyLaneTool,
         simulate_cirq: simulateCirqTool,
         verify_intent_alignment: verifyIntentTool,
+        convert_to_openqasm: convertToOpenQasmTool,
       },
-      stopWhen: stepCountIs(10),
+      stopWhen: stepCountIs(12),
       onError: ({ error }) => {
         console.error("[chat] streamText error:", error);
       },

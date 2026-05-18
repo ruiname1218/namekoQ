@@ -2,7 +2,8 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CircuitEditor } from "@/components/circuit-editor";
 
 const chatTransport = new DefaultChatTransport({ api: "/api/chat" });
 
@@ -11,11 +12,26 @@ interface ExampleQuery {
   text: string;
 }
 
+type QuantumFramework = "qiskit" | "pennylane" | "cirq";
+type FrameworkPreference = "auto" | QuantumFramework;
+type OutputFormatId = "source" | "openqasm" | `converted:${QuantumFramework}`;
+
+interface OutputCodeEntry {
+  id: OutputFormatId;
+  label: string;
+  code: string;
+}
+
+interface QasmHistory {
+  items: string[];
+  index: number;
+}
+
+const QUANTUM_FRAMEWORKS = ["qiskit", "pennylane", "cirq"] as const;
+
 export function Chat(_props: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
-  const [framework, setFramework] = useState<"qiskit" | "pennylane" | "cirq">(
-    "qiskit",
-  );
+  const [framework, setFramework] = useState<FrameworkPreference>("auto");
   const [shots, setShots] = useState("auto");
   const [maxIterations, setMaxIterations] = useState("auto");
   const { messages, sendMessage, status, error } = useChat({
@@ -24,6 +40,14 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
 
   const busy = status === "submitted" || status === "streaming";
   const activity = useMemo(() => getActivity(messages, busy), [messages, busy]);
+  const finalCode = useMemo(
+    () => getFinalGeneratedCode(messages, busy),
+    [messages, busy],
+  );
+  const finalOpenQasm = useMemo(
+    () => getFinalOpenQasm(messages, busy),
+    [messages, busy],
+  );
 
   const submit = (text: string) => {
     if (!text.trim() || busy) return;
@@ -50,28 +74,6 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
             </p>
           </section>
 
-          <section>
-            <PanelLabel>Framework</PanelLabel>
-            <div className="grid grid-cols-3 rounded-sm border border-[var(--border)] bg-[var(--surface)] p-1">
-              {(["qiskit", "pennylane", "cirq"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setFramework(item)}
-                  disabled={busy}
-                  className={[
-                    "rounded-sm px-2 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
-                    framework === item
-                      ? "bg-white text-[var(--fg)] shadow-sm"
-                      : "text-[var(--muted)] hover:text-[var(--fg)]",
-                  ].join(" ")}
-                >
-                  {getFrameworkLabel(item)}
-                </button>
-              ))}
-            </div>
-          </section>
-
           <section className="flex flex-1 flex-col">
             <textarea
               value={input}
@@ -87,6 +89,42 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
               Advanced
             </summary>
             <div className="flex flex-col gap-4 border-t border-[var(--border)] px-4 py-4">
+              <div className="flex flex-col gap-2">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  Framework
+                </div>
+                <div className="grid grid-cols-2 gap-1 rounded-sm border border-[var(--border)] bg-[var(--surface)] p-1">
+                  {(
+                    [
+                      "auto",
+                      "qiskit",
+                      "pennylane",
+                      "cirq",
+                    ] as const satisfies readonly FrameworkPreference[]
+                  ).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setFramework(item)}
+                      disabled={busy}
+                      className={[
+                        "min-w-0 rounded-sm border px-1.5 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                        framework === item
+                          ? "border-[var(--ink)] bg-white text-[var(--fg)] shadow-sm"
+                          : "border-transparent bg-transparent text-[var(--muted)] hover:border-[var(--border-strong)] hover:bg-white hover:text-[var(--fg)]",
+                      ].join(" ")}
+                    >
+                      <span className="block truncate">
+                        {getFrameworkPreferenceLabel(item)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs leading-relaxed text-[var(--muted)]">
+                  Auto では LLM が問題に合う framework を選びます。
+                </span>
+              </div>
+
               <label className="flex flex-col gap-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                   Shots
@@ -158,6 +196,9 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
               {messages.map((m) => (
                 <MessageView key={m.id} message={m} />
               ))}
+              {finalCode && (
+                <FinalOutputPanel code={finalCode} openqasm={finalOpenQasm} />
+              )}
             </div>
           )}
         </div>
@@ -266,6 +307,17 @@ interface VerifyOutput {
   summary?: string;
   durationMs?: number;
 }
+interface OpenQasmOutput {
+  framework?: QuantumFramework;
+  openqasm?: string | null;
+  openqasmVersion?: string | null;
+  editorOpenqasm?: string | null;
+  openqasmError?: string | null;
+  convertedFrameworkCodes?: Partial<Record<QuantumFramework, string>>;
+  extractionCode?: string;
+  notes?: string[];
+  durationMs?: number;
+}
 interface PlanShape {
   domain?: string;
   framework?: "qiskit" | "pennylane" | "cirq";
@@ -288,7 +340,7 @@ interface PlanOutput {
   next?: string;
 }
 type CombinedInput = SimulateInput & VerifyInput & PlanShape;
-type CombinedOutput = SimulateOutput & VerifyOutput & PlanOutput;
+type CombinedOutput = SimulateOutput & VerifyOutput & PlanOutput & OpenQasmOutput;
 interface ToolPartShape {
   type: string;
   state?: string;
@@ -297,8 +349,29 @@ interface ToolPartShape {
   errorText?: string;
 }
 
+interface FinalGeneratedCode {
+  code: string;
+  toolName: string;
+  framework?: QuantumFramework;
+  purpose?: string;
+}
+
+interface FinalOpenQasm {
+  openqasm: string;
+  framework?: QuantumFramework;
+  openqasmVersion?: string | null;
+  editorOpenqasm?: string | null;
+  convertedFrameworkCodes?: Partial<Record<QuantumFramework, string>>;
+  extractionCode?: string;
+  notes?: string[];
+}
+
 interface ActivityStep {
-  id: "request_plan" | "simulate" | "verify_intent_alignment";
+  id:
+    | "request_plan"
+    | "simulate"
+    | "verify_intent_alignment"
+    | "openqasm";
   title: string;
   detail: string;
   state: "waiting" | "active" | "done" | "error";
@@ -366,6 +439,267 @@ function AgentProgress({
   );
 }
 
+function FinalOutputPanel({
+  code,
+  openqasm,
+}: {
+  code: FinalGeneratedCode;
+  openqasm: FinalOpenQasm | null;
+}) {
+  const selectedSourceFramework = code.framework ?? openqasm?.framework ?? "qiskit";
+  const initialEditorOpenqasm =
+    openqasm?.editorOpenqasm ?? openqasm?.openqasm ?? "";
+  const [editorOpenqasm, setEditorOpenqasm] = useState(
+    initialEditorOpenqasm,
+  );
+  const [qasmHistory, setQasmHistory] = useState<QasmHistory>(
+    initialEditorOpenqasm
+      ? { items: [initialEditorOpenqasm], index: 0 }
+      : { items: [], index: -1 },
+  );
+  const qasmFileInputRef = useRef<HTMLInputElement | null>(null);
+  const liveOpenqasm = editorOpenqasm || openqasm?.openqasm || "";
+  const liveOpenqasmVersion = inferOpenQasmVersion(
+    liveOpenqasm,
+    openqasm?.openqasmVersion,
+  );
+  const liveConvertedCodes = useMemo(
+    () =>
+      liveOpenqasm
+        ? createClientFrameworkConversionCodes({
+            openqasm: liveOpenqasm,
+            openqasmVersion: liveOpenqasmVersion ?? undefined,
+          })
+        : {},
+    [liveOpenqasm, liveOpenqasmVersion],
+  );
+  const codeEntries: OutputCodeEntry[] = [
+    {
+      id: "source",
+      label: `${getFrameworkLabel(selectedSourceFramework)} (final)`,
+      code: code.code,
+    },
+    ...(openqasm && liveOpenqasm
+      ? QUANTUM_FRAMEWORKS.map((framework) => ({
+          id: convertedFormatId(framework),
+          label: `${getFrameworkLabel(framework)} (from OpenQASM)`,
+          code: liveConvertedCodes[framework] ?? "",
+        }))
+      : []),
+    ...(openqasm && liveOpenqasm
+      ? [
+          {
+            id: "openqasm" as const,
+            label: liveOpenqasmVersion
+              ? `OpenQASM ${liveOpenqasmVersion}`
+              : "OpenQASM",
+            code: liveOpenqasm,
+          },
+        ]
+      : []),
+  ];
+  const [selectedFormat, setSelectedFormat] =
+    useState<OutputFormatId>("source");
+  const selectedCode =
+    codeEntries.find((entry) => entry.id === selectedFormat)?.code ?? code.code;
+  const [editedCode, setEditedCode] = useState(selectedCode);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const canUndoQasm = qasmHistory.index > 0;
+  const canRedoQasm =
+    qasmHistory.index >= 0 && qasmHistory.index < qasmHistory.items.length - 1;
+
+  useEffect(() => {
+    setSelectedFormat("source");
+  }, [code.code, selectedSourceFramework]);
+
+  useEffect(() => {
+    const nextOpenqasm = openqasm?.editorOpenqasm ?? openqasm?.openqasm ?? "";
+    setEditorOpenqasm(nextOpenqasm);
+    setQasmHistory(
+      nextOpenqasm
+        ? { items: [nextOpenqasm], index: 0 }
+        : { items: [], index: -1 },
+    );
+  }, [openqasm?.editorOpenqasm, openqasm?.openqasm]);
+
+  useEffect(() => {
+    setEditedCode(selectedCode);
+    setCopyState("idle");
+  }, [selectedCode]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(editedCode);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
+
+  const commitEditorOpenqasm = (nextOpenqasm: string) => {
+    setEditorOpenqasm(nextOpenqasm);
+    setQasmHistory((history) => {
+      const base = history.items.slice(0, history.index + 1);
+      if (base[base.length - 1] === nextOpenqasm) return history;
+      const items = [...base, nextOpenqasm];
+      const limitedItems = items.length > 60 ? items.slice(items.length - 60) : items;
+      return { items: limitedItems, index: limitedItems.length - 1 };
+    });
+  };
+
+  const undoQasm = () => {
+    if (!canUndoQasm) return;
+    const index = qasmHistory.index - 1;
+    const nextOpenqasm = qasmHistory.items[index] ?? "";
+    setQasmHistory({ ...qasmHistory, index });
+    setEditorOpenqasm(nextOpenqasm);
+    setSelectedFormat("openqasm");
+  };
+
+  const redoQasm = () => {
+    if (!canRedoQasm) return;
+    const index = qasmHistory.index + 1;
+    const nextOpenqasm = qasmHistory.items[index] ?? "";
+    setQasmHistory({ ...qasmHistory, index });
+    setEditorOpenqasm(nextOpenqasm);
+    setSelectedFormat("openqasm");
+  };
+
+  const importOpenQasmFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    const nextOpenqasm = await file.text();
+    commitEditorOpenqasm(nextOpenqasm);
+    setSelectedFormat("openqasm");
+    if (copyState !== "idle") setCopyState("idle");
+  };
+
+  const exportOpenQasmFile = () => {
+    if (!liveOpenqasm) return;
+    const blob = new Blob([liveOpenqasm], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "namekoq-circuit.qasm";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  return (
+    <section className="overflow-hidden rounded-sm border border-[var(--border-strong)] bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold uppercase tracking-[0.18em]">
+            Final Output
+          </div>
+          <label className="mt-2 flex min-w-0 items-center gap-2">
+            <select
+              value={selectedFormat}
+              onChange={(e) =>
+                setSelectedFormat(e.target.value as OutputFormatId)
+              }
+              className="max-w-56 rounded-sm border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium outline-none focus:border-[var(--ink)]"
+            >
+              {codeEntries.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={undoQasm}
+            disabled={!canUndoQasm}
+            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={redoQasm}
+            disabled={!canRedoQasm}
+            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Redo
+          </button>
+          <button
+            type="button"
+            onClick={() => qasmFileInputRef.current?.click()}
+            disabled={!openqasm}
+            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Import QASM
+          </button>
+          <button
+            type="button"
+            onClick={exportOpenQasmFile}
+            disabled={!liveOpenqasm}
+            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Export QASM
+          </button>
+          <button
+            type="button"
+            onClick={copyCode}
+            className="rounded-sm border border-[var(--ink)] px-3 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white"
+          >
+            {copyState === "copied"
+              ? "Copied"
+              : copyState === "failed"
+              ? "Copy failed"
+              : "Copy"}
+          </button>
+          <input
+            ref={qasmFileInputRef}
+            type="file"
+            accept=".qasm,.qasm2,.openqasm,.txt"
+            onChange={importOpenQasmFile}
+            className="hidden"
+          />
+        </div>
+      </div>
+      <textarea
+        value={editedCode}
+        onChange={(e) => {
+          const nextCode = e.target.value;
+          setEditedCode(nextCode);
+          if (selectedFormat === "openqasm") setEditorOpenqasm(nextCode);
+          if (copyState !== "idle") setCopyState("idle");
+        }}
+        onBlur={() => {
+          if (selectedFormat === "openqasm") commitEditorOpenqasm(editedCode);
+        }}
+        spellCheck={false}
+        className="min-h-96 w-full resize-y border-0 bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
+      />
+      {openqasm && editorOpenqasm && (
+        <CircuitEditor
+          openqasm={editorOpenqasm}
+          onChange={(nextOpenqasm) => {
+            commitEditorOpenqasm(nextOpenqasm);
+            if (selectedFormat === "source") {
+              setSelectedFormat(convertedFormatId(selectedSourceFramework));
+            }
+            if (copyState !== "idle") setCopyState("idle");
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 function ToolPart({ part }: { part: unknown }) {
   const p = part as ToolPartShape;
   const toolName = p.type.replace(/^tool-/, "");
@@ -374,6 +708,7 @@ function ToolPart({ part }: { part: unknown }) {
   const output = p.output;
   const isVerify = toolName === "verify_intent_alignment";
   const isPlan = toolName === "request_plan";
+  const isOpenQasm = toolName === "convert_to_openqasm";
   const failed =
     state === "output-error" ||
     Boolean(p.errorText) ||
@@ -411,6 +746,19 @@ function ToolPart({ part }: { part: unknown }) {
     );
   }
 
+  if (isOpenQasm) {
+    return (
+      <OpenQasmToolPart
+        toolName={toolName}
+        state={state}
+        active={active}
+        failed={failed}
+        output={output}
+        errorText={p.errorText}
+      />
+    );
+  }
+
   return (
     <ToolCard
       toolName={toolName}
@@ -426,7 +774,6 @@ function ToolPart({ part }: { part: unknown }) {
       )}
       {input?.code && (
         <div className="border-b border-[var(--border)]">
-          <CircuitPreview code={input.code} />
           <EditableCode initialCode={input.code} />
         </div>
       )}
@@ -453,6 +800,66 @@ function ToolPart({ part }: { part: unknown }) {
       )}
       {p.errorText && (
         <div className="px-3 py-2 text-xs text-[var(--fg)]">{p.errorText}</div>
+      )}
+    </ToolCard>
+  );
+}
+
+function OpenQasmToolPart({
+  toolName,
+  state,
+  active,
+  failed,
+  output,
+  errorText,
+}: {
+  toolName: string;
+  state: string;
+  active: boolean;
+  failed: boolean;
+  output: CombinedOutput | undefined;
+  errorText: string | undefined;
+}) {
+  return (
+    <ToolCard
+      toolName={toolName}
+      state={state}
+      active={active}
+      failed={failed}
+      durationMs={output?.durationMs}
+    >
+      <div className="flex flex-col gap-3 px-3 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
+            {output?.ok ? "抽出済み" : failed ? "要確認" : "抽出中"}
+          </span>
+          {output?.framework && (
+            <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs">
+              {getFrameworkLabel(output.framework)}
+            </span>
+          )}
+          {output?.openqasmVersion && (
+            <span className="font-mono text-xs text-[var(--muted)]">
+              OpenQASM {output.openqasmVersion}
+            </span>
+          )}
+        </div>
+
+        {output?.openqasmError && (
+          <div className="text-xs text-[var(--fg)]">
+            {output.openqasmError}
+          </div>
+        )}
+
+        {output?.ok && (
+          <div className="text-xs text-[var(--muted)]">
+            OpenQASM と変換後コードは Final Output で切り替えて確認できます。
+          </div>
+        )}
+      </div>
+
+      {errorText && (
+        <div className="px-3 py-2 text-xs text-[var(--fg)]">{errorText}</div>
       )}
     </ToolCard>
   );
@@ -564,97 +971,6 @@ function CountsChart({ counts }: { counts: Record<string, number> }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-interface CircuitGate {
-  id: string;
-  name: string;
-  targets: number[];
-}
-
-function CircuitPreview({ code }: { code: string }) {
-  const parsedGates = useMemo(() => parseCircuitGates(code), [code]);
-
-  // ドラッグ並び替え用のローカルオーバーライド
-  const [overrides, setOverrides] = useState<CircuitGate[] | null>(null);
-  const prevCodeRef = useMemo(() => ({ current: code }), [code]);
-
-  // code が変わったらオーバーライドをリセット (useEffect 不要: useMemo で参照が変わるだけ)
-  const gates = overrides && prevCodeRef.current === code ? overrides : parsedGates;
-
-  const qubits = Math.max(1, ...gates.flatMap((gate) => gate.targets), 0) + 1;
-
-  if (gates.length === 0) {
-    return (
-      <div className="px-3 py-3 text-xs text-[var(--muted)]">
-        回路図: コードから表示可能なゲートを検出できませんでした。
-      </div>
-    );
-  }
-
-  const moveGate = (from: number, to: number) => {
-    if (from === to) return;
-    const next = [...gates];
-    const [item] = next.splice(from, 1);
-    next.splice(to, 0, item);
-    setOverrides(next);
-  };
-
-  return (
-    <div className="px-3 py-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-          Quantum circuit
-        </div>
-        <div className="text-xs text-[var(--muted)]">
-          ゲートはドラッグで並び替えできます
-        </div>
-      </div>
-      <div className="overflow-x-auto rounded-sm border border-[var(--border)] bg-white p-3">
-        <div className="grid gap-2" style={{ minWidth: `${gates.length * 64 + 70}px` }}>
-          {Array.from({ length: qubits }).map((_, qubit) => (
-            <div
-              key={qubit}
-              className="grid items-center gap-2"
-              style={{
-                gridTemplateColumns: `44px repeat(${gates.length}, 52px)`,
-              }}
-            >
-              <div className="font-mono text-xs text-[var(--muted)]">q{qubit}</div>
-              {gates.map((gate, gateIndex) => {
-                const active = gate.targets.includes(qubit);
-                return (
-                  <div
-                    key={`${gate.id}-${qubit}`}
-                    className="relative flex h-9 items-center justify-center"
-                    draggable={qubit === 0}
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("text/plain", String(gateIndex));
-                    }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      const from = Number(e.dataTransfer.getData("text/plain"));
-                      if (!Number.isNaN(from)) moveGate(from, gateIndex);
-                    }}
-                  >
-                    <div className="absolute left-0 right-0 h-px bg-[var(--border-strong)]" />
-                    {active && (
-                      <div className="relative z-10 grid h-8 min-w-8 place-items-center rounded-sm border border-[var(--ink)] bg-white px-2 font-mono text-xs shadow-sm">
-                        {gate.name}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="mt-2 text-xs text-[var(--muted)]">
-        並び替えは表示上の編集です。コードへの自動反映はまだ未接続です。
-      </div>
     </div>
   );
 }
@@ -954,6 +1270,12 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
       detail: "要望・計画・コード・結果の整合性を検証",
       state: "waiting",
     },
+    {
+      id: "openqasm",
+      title: "OpenQASM",
+      detail: "最終コードとは別に回路部分をOpenQASMへ抽出",
+      state: "waiting",
+    },
   ];
 
   const toolParts = messages
@@ -966,6 +1288,9 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
   for (const step of base) {
     const part = [...toolParts].reverse().find((candidate) => {
       if (step.id === "simulate") return isSimulationToolType(candidate.type);
+      if (step.id === "openqasm") {
+        return candidate.type === "tool-convert_to_openqasm";
+      }
       return candidate.type === `tool-${step.id}`;
     });
     if (!part) continue;
@@ -985,11 +1310,18 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
           ? "error"
           : "active";
       if (part.input?.purpose) step.detail = part.input.purpose;
-    } else {
+    } else if (step.id === "verify_intent_alignment") {
       step.state =
         part.output?.aligned === true
           ? "done"
           : part.output?.aligned === false
+          ? "error"
+          : "active";
+    } else {
+      step.state =
+        part.output?.ok === true
+          ? "done"
+          : part.output?.ok === false
           ? "error"
           : "active";
     }
@@ -1012,6 +1344,7 @@ function getToolLabel(toolName: string): string {
   if (toolName === "verify_intent_alignment") {
     return "03 / verify_intent_alignment";
   }
+  if (toolName === "convert_to_openqasm") return "04 / convert_to_openqasm";
   return toolName;
 }
 
@@ -1023,18 +1356,88 @@ function isSimulationToolType(type: string): boolean {
   );
 }
 
+function getFrameworkFromSimulationToolType(
+  type: string,
+): QuantumFramework | undefined {
+  if (type === "tool-simulate_qiskit") return "qiskit";
+  if (type === "tool-simulate_pennylane") return "pennylane";
+  if (type === "tool-simulate_cirq") return "cirq";
+  return undefined;
+}
+
+function getFinalGeneratedCode(
+  messages: UIMessage[],
+  busy: boolean,
+): FinalGeneratedCode | null {
+  if (busy) return null;
+
+  const toolParts = messages
+    .flatMap((message) => message.parts)
+    .filter((part): part is UIMessage["parts"][number] & { type: string } =>
+      part.type.startsWith("tool-"),
+    )
+    .map((part) => part as ToolPartShape);
+
+  for (const part of [...toolParts].reverse()) {
+    if (!isSimulationToolType(part.type)) continue;
+    if (part.output?.ok !== true || !part.input?.code) continue;
+    return {
+      code: part.input.code,
+      toolName: part.type.replace(/^tool-/, ""),
+      framework: getFrameworkFromSimulationToolType(part.type),
+      purpose: part.input.purpose,
+    };
+  }
+
+  return null;
+}
+
+function getFinalOpenQasm(
+  messages: UIMessage[],
+  busy: boolean,
+): FinalOpenQasm | null {
+  if (busy) return null;
+
+  const toolParts = messages
+    .flatMap((message) => message.parts)
+    .filter((part): part is UIMessage["parts"][number] & { type: string } =>
+      part.type.startsWith("tool-"),
+    )
+    .map((part) => part as ToolPartShape);
+
+  for (const part of [...toolParts].reverse()) {
+    if (part.type !== "tool-convert_to_openqasm") continue;
+    if (part.output?.ok !== true || !part.output.openqasm) continue;
+    return {
+      openqasm: part.output.openqasm,
+      framework: part.output.framework,
+      openqasmVersion: part.output.openqasmVersion,
+      editorOpenqasm: part.output.editorOpenqasm,
+      convertedFrameworkCodes: part.output.convertedFrameworkCodes,
+      extractionCode: part.output.extractionCode,
+      notes: part.output.notes,
+    };
+  }
+
+  return null;
+}
+
 function withAdvancedSettings(
   text: string,
   settings: {
-    framework: "qiskit" | "pennylane" | "cirq";
+    framework: FrameworkPreference;
     shots: string;
     maxIterations: string;
   },
 ): string {
-  const directives = [
-    `framework は ${getFrameworkLabel(settings.framework)} を使ってください`,
-    "他の framework からの変換ではなく、選択された framework 向けのコードを最初から生成してください",
-  ];
+  const directives: string[] = [];
+
+  if (settings.framework !== "auto") {
+    directives.push(
+      `framework は ${getFrameworkLabel(settings.framework)} を使ってください`,
+      "他の framework からの変換ではなく、選択された framework 向けのコードを最初から生成してください",
+    );
+  }
 
   if (settings.shots !== "auto") {
     directives.push(`shots は ${settings.shots} にしてください`);
@@ -1055,10 +1458,126 @@ function withAdvancedSettings(
   ].join("\n");
 }
 
-function getFrameworkLabel(framework: "qiskit" | "pennylane" | "cirq"): string {
+function getFrameworkLabel(framework: QuantumFramework): string {
   if (framework === "pennylane") return "PennyLane";
   if (framework === "cirq") return "Cirq";
   return "Qiskit";
+}
+
+function getFrameworkPreferenceLabel(framework: FrameworkPreference): string {
+  if (framework === "auto") return "Auto";
+  return getFrameworkLabel(framework);
+}
+
+function convertedFormatId(framework: QuantumFramework): OutputFormatId {
+  return `converted:${framework}`;
+}
+
+function inferOpenQasmVersion(
+  openqasm: string,
+  fallback?: string | null,
+): string | null {
+  const trimmed = openqasm.trimStart();
+  if (trimmed.startsWith("OPENQASM 3")) return "3.0";
+  if (trimmed.startsWith("OPENQASM 2")) return "2.0";
+  return fallback ?? null;
+}
+
+function createClientFrameworkConversionCodes({
+  openqasm,
+  openqasmVersion,
+}: {
+  openqasm: string;
+  openqasmVersion?: string;
+}): Partial<Record<QuantumFramework, string>> {
+  return Object.fromEntries(
+    QUANTUM_FRAMEWORKS.map((framework) => [
+      framework,
+      createClientFrameworkConversionCode({
+        target: framework,
+        openqasm,
+        openqasmVersion,
+      }),
+    ]),
+  );
+}
+
+function createClientFrameworkConversionCode({
+  target,
+  openqasm,
+  openqasmVersion,
+}: {
+  target: QuantumFramework;
+  openqasm: string;
+  openqasmVersion?: string;
+}) {
+  const qasmLiteral = JSON.stringify(openqasm);
+  const isQasm3 =
+    openqasmVersion === "3.0" || openqasm.trimStart().startsWith("OPENQASM 3");
+
+  if (target === "qiskit") {
+    return `
+from qiskit import qasm2, qasm3
+from qiskit_aer import AerSimulator
+
+openqasm = ${qasmLiteral}
+
+qc = ${isQasm3 ? "qasm3.loads(openqasm)" : "qasm2.loads(openqasm)"}
+
+simulator = AerSimulator()
+result = simulator.run(qc, shots=1024).result()
+counts = result.get_counts()
+print({"counts": counts})
+`.trim();
+  }
+
+  if (target === "pennylane") {
+    return `
+import re
+import pennylane as qml
+
+openqasm = ${qasmLiteral}
+
+def infer_wires(qasm: str) -> int:
+    qasm2 = re.search(r"qreg\\s+\\w+\\[(\\d+)\\]", qasm)
+    if qasm2:
+        return int(qasm2.group(1))
+    qasm3 = re.search(r"qubit\\[(\\d+)\\]\\s+\\w+", qasm)
+    if qasm3:
+        return int(qasm3.group(1))
+    return 1
+
+quantum_fn = ${isQasm3 ? "qml.from_qasm3(openqasm)" : "qml.from_qasm(openqasm)"}
+n_wires = infer_wires(openqasm)
+dev = qml.device("default.qubit", wires=n_wires)
+
+@qml.qnode(dev)
+def circuit():
+    quantum_fn()
+    return qml.probs(wires=range(n_wires))
+
+probs = circuit()
+print({"probabilities": probs.tolist(), "wires": n_wires})
+`.trim();
+  }
+
+  return `
+# Requires cirq-core plus the optional parser dependency:
+#   pip install ply
+import cirq
+from cirq.contrib.qasm_import import circuit_from_qasm
+
+openqasm = ${qasmLiteral}
+
+if openqasm.lstrip().startswith("OPENQASM 3"):
+    from qiskit import qasm2, qasm3
+    openqasm = qasm2.dumps(qasm3.loads(openqasm))
+
+circuit = circuit_from_qasm(openqasm)
+simulator = cirq.Simulator()
+result = simulator.run(circuit, repetitions=1024)
+print({"measurements": {k: v.tolist() for k, v in result.measurements.items()}})
+`.trim();
 }
 
 function findCounts(value: unknown): Record<string, number> | null {
@@ -1090,52 +1609,6 @@ function extractMetrics(value: unknown): Array<{ key: string; value: string }> {
       key,
       value: typeof item === "number" ? formatNumber(item) : String(item),
     }));
-}
-
-function parseCircuitGates(code: string): CircuitGate[] {
-  const gateNames = new Set([
-    "h",
-    "x",
-    "y",
-    "z",
-    "rx",
-    "ry",
-    "rz",
-    "cx",
-    "cz",
-    "swap",
-    "measure",
-  ]);
-  const gates: CircuitGate[] = [];
-
-  code.split("\n").forEach((line, index) => {
-    const match = line.match(/\b(?:qc|ansatz|circuit|qc_measure)\.(\w+)\((.*)\)/);
-    if (!match) return;
-
-    const [, rawName, rawArgs] = match;
-    if (!gateNames.has(rawName)) return;
-
-    const targets = extractIntegerArgs(rawArgs).slice(rawName === "measure" ? 0 : -2);
-    const fallbackTargets = extractIntegerArgs(rawArgs);
-    const normalizedTargets =
-      targets.length > 0 ? targets : fallbackTargets.slice(0, rawName === "measure" ? 1 : 2);
-
-    if (normalizedTargets.length === 0) return;
-
-    gates.push({
-      id: `${index}-${rawName}`,
-      name: rawName.toUpperCase(),
-      targets: normalizedTargets,
-    });
-  });
-
-  return gates.slice(0, 28);
-}
-
-function extractIntegerArgs(args: string): number[] {
-  return Array.from(args.matchAll(/(?<![A-Za-z_])\d+(?![A-Za-z_])/g)).map((match) =>
-    Number(match[0]),
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
