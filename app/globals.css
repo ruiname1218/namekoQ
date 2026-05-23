@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
 :root {
   --bg: #ffffff;
   --fg: #111111;
@@ -12,12 +14,19 @@
   --code-bg: #f6f6f6;
   --accent: var(--ink);
   --accent-dim: #4b4b4b;
+  --card: #ffffff;
+  --card-foreground: var(--fg);
+  --muted-foreground: var(--muted);
 }
 
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted-foreground: var(--muted-foreground);
   --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --inset-shadow-lg: inset 0 10px 8px color-mix(in oklch, var(--background) 7%, transparent);
 }
 
 html,

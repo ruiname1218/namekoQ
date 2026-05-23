@@ -1,0 +1,45 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">namekoQ icon</title>
+  <desc id="desc">A glossy quantum mushroom-like mark with bright orbital lines.</desc>
+  <defs>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(66 56) rotate(90) scale(58 62)">
+      <stop stop-color="#ffffff" stop-opacity=".75"/>
+      <stop offset=".45" stop-color="#d9f0ff" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cap" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(70 43) rotate(91) scale(44 52)">
+      <stop stop-color="#263446"/>
+      <stop offset=".44" stop-color="#111925"/>
+      <stop offset="1" stop-color="#06090e"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="23" y1="40" x2="106" y2="62" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".2" stop-color="#eaf7ff"/>
+      <stop offset=".52" stop-color="#9cb4c8"/>
+      <stop offset=".78" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#b9d7ef"/>
+    </linearGradient>
+    <linearGradient id="stem" x1="57" y1="74" x2="73" y2="107" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172335"/>
+      <stop offset=".56" stop-color="#244466"/>
+      <stop offset="1" stop-color="#eff8ff"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.82 0 0 0 0 0.93 0 0 0 0 1 0 0 0 .82 0"/>
+      <feBlend in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <rect width="128" height="128" fill="transparent"/>
+  <ellipse cx="66" cy="59" rx="56" ry="52" fill="url(#halo)"/>
+  <path d="M25.5 62.5C29.5 40 52.5 24.5 77.8 28.3c24.3 3.7 35.2 21.5 33.1 36.3-1 7.2-5.3 12.4-12.5 15.1-9.6 3.6-24.6.7-37.1 2.6-10.5 1.6-17.3 7.3-26.6 3.3-7.3-3.2-10.7-11.7-9.2-23.1Z" fill="url(#cap)"/>
+  <path d="M26.2 62.4C47.5 64.4 68.6 55.5 109 57.2" stroke="url(#rim)" stroke-width="3.3" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M30.6 72.6C55.2 66.6 81.2 68.8 104.4 79.2" stroke="url(#rim)" stroke-width="2.6" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M29.5 55.6C51.7 35.8 78.7 28.2 104.9 42.4" stroke="#f5fbff" stroke-width="1.6" stroke-opacity=".9" stroke-linecap="round"/>
+  <path d="M62.6 76.8C66.2 85.4 63.9 95.7 56.5 107.7c10.5-2.2 20.3-11.4 29.9-28.2-7.7 1.6-15.5 1.3-23.8-2.7Z" fill="url(#stem)"/>
+  <path d="M61.8 77.7C70.2 88.5 69.5 99.9 56.4 108.1" stroke="url(#rim)" stroke-width="2.4" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M81.2 82.5C72.7 90.9 65.7 99.1 56.2 108.2" stroke="#dff4ff" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".85"/>
+  <circle cx="27" cy="62" r="3.8" fill="#ffffff" filter="url(#glow)"/>
+  <circle cx="98.5" cy="57.8" r="3.2" fill="#ffffff" filter="url(#glow)"/>
+  <circle cx="58.5" cy="107.2" r="3.4" fill="#ffffff" filter="url(#glow)"/>
+</svg>

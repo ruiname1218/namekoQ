@@ -3,7 +3,9 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BlochSpherePanel } from "@/components/bloch-sphere";
 import { CircuitEditor } from "@/components/circuit-editor";
+import { LiquidMetalCard } from "@/components/ui/liquid-metal-card";
 
 const chatTransport = new DefaultChatTransport({ api: "/api/chat" });
 
@@ -12,8 +14,21 @@ interface ExampleQuery {
   text: string;
 }
 
+type ModelTier = "default" | "pro";
 type QuantumFramework = "qiskit" | "pennylane" | "cirq";
 type FrameworkPreference = "auto" | QuantumFramework;
+type SimulatorPreference =
+  | "auto"
+  | "qiskit_aer_qasm"
+  | "qiskit_aer_statevector"
+  | "qiskit_aer_density_matrix"
+  | "qiskit_aer_mps"
+  | "pennylane_default_qubit"
+  | "pennylane_default_mixed"
+  | "pennylane_lightning_qubit"
+  | "cirq_simulator"
+  | "cirq_density_matrix"
+  | "cirq_clifford";
 type OutputFormatId = "source" | "openqasm" | `converted:${QuantumFramework}`;
 
 interface OutputCodeEntry {
@@ -27,11 +42,109 @@ interface QasmHistory {
   index: number;
 }
 
+interface SimulatorOption {
+  id: SimulatorPreference;
+  label: string;
+  framework?: QuantumFramework;
+  help: string;
+  directive?: string;
+}
+
 const QUANTUM_FRAMEWORKS = ["qiskit", "pennylane", "cirq"] as const;
+const SIMULATOR_OPTIONS: SimulatorOption[] = [
+  {
+    id: "auto",
+    label: "Auto",
+    help: "The LLM chooses a simulator that fits the problem.",
+  },
+  {
+    id: "qiskit_aer_qasm",
+    label: "Aer qasm",
+    framework: "qiskit",
+    help: "For shot-based measurement counts.",
+    directive:
+      "Use qiskit_aer.AerSimulator() in Qiskit and return shot-based measurement counts.",
+  },
+  {
+    id: "qiskit_aer_statevector",
+    label: "Aer statevector",
+    framework: "qiskit",
+    help: "For exact statevectors and probabilities.",
+    directive:
+      "Use qiskit_aer.AerSimulator(method='statevector') or Statevector in Qiskit and return exact statevector / probabilities.",
+  },
+  {
+    id: "qiskit_aer_density_matrix",
+    label: "Aer density matrix",
+    framework: "qiskit",
+    help: "For mixed states and noise models.",
+    directive:
+      "Use qiskit_aer.AerSimulator(method='density_matrix') in Qiskit and return density_matrix / probabilities with a noise model when needed.",
+  },
+  {
+    id: "qiskit_aer_mps",
+    label: "Aer MPS",
+    framework: "qiskit",
+    help: "For larger low-entanglement circuits.",
+    directive:
+      "Use qiskit_aer.AerSimulator(method='matrix_product_state') in Qiskit and run a circuit suitable for MPS simulation.",
+  },
+  {
+    id: "pennylane_default_qubit",
+    label: "default.qubit",
+    framework: "pennylane",
+    help: "PennyLane's standard pure-state simulator.",
+    directive:
+      "Use qml.device('default.qubit') in PennyLane.",
+  },
+  {
+    id: "pennylane_default_mixed",
+    label: "default.mixed",
+    framework: "pennylane",
+    help: "For mixed states and noise channels.",
+    directive:
+      "Use qml.device('default.mixed') in PennyLane and use noise channels plus density-matrix-compatible measurements when needed.",
+  },
+  {
+    id: "pennylane_lightning_qubit",
+    label: "lightning.qubit",
+    framework: "pennylane",
+    help: "A faster pure-state simulator.",
+    directive:
+      "Use qml.device('lightning.qubit') in PennyLane. If unavailable, explain the import error and do not silently switch frameworks.",
+  },
+  {
+    id: "cirq_simulator",
+    label: "Simulator",
+    framework: "cirq",
+    help: "Cirq's standard state-vector simulator.",
+    directive:
+      "Use cirq.Simulator() in Cirq and return either state-vector simulation results or sampled measurements.",
+  },
+  {
+    id: "cirq_density_matrix",
+    label: "Density matrix",
+    framework: "cirq",
+    help: "For mixed states and noise channels.",
+    directive:
+      "Use cirq.DensityMatrixSimulator() in Cirq and use noise channels plus density-matrix-compatible measurements when needed.",
+  },
+  {
+    id: "cirq_clifford",
+    label: "Clifford",
+    framework: "cirq",
+    help: "Only for Clifford / stabilizer circuits.",
+    directive:
+      "Use cirq.CliffordSimulator() in Cirq. If the problem needs non-Clifford gates, explain why this simulator is unsuitable.",
+  },
+];
 
 export function Chat(_props: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [modelTier, setModelTier] = useState<ModelTier>("default");
   const [framework, setFramework] = useState<FrameworkPreference>("auto");
+  const [simulator, setSimulator] = useState<SimulatorPreference>("auto");
   const [shots, setShots] = useState("auto");
   const [maxIterations, setMaxIterations] = useState("auto");
   const { messages, sendMessage, status, error } = useChat({
@@ -48,40 +161,96 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
     () => getFinalOpenQasm(messages, busy),
     [messages, busy],
   );
+  const finalReport = useMemo(
+    () => getFinalAnalysisReport(messages, busy),
+    [messages, busy],
+  );
+  const simulatorOptions = useMemo(
+    () => getSimulatorOptions(framework),
+    [framework],
+  );
+
+  useEffect(() => {
+    if (!simulatorOptions.some((option) => option.id === simulator)) {
+      setSimulator("auto");
+    }
+  }, [simulator, simulatorOptions]);
 
   const submit = (text: string) => {
-    if (!text.trim() || busy) return;
-    sendMessage({
-      text: withAdvancedSettings(text, { framework, shots, maxIterations }),
-    });
+    const currentText = inputRef.current?.value ?? text;
+    if (!currentText.trim() || busy) return;
+    sendMessage(
+      {
+        text: withAdvancedSettings(currentText, {
+          framework,
+          simulator,
+          shots,
+          maxIterations,
+        }),
+      },
+      { body: { modelTier } },
+    );
     setInput("");
   };
 
   return (
-    <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 border-t border-[var(--border)] lg:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="border-b border-[var(--border)] bg-white p-5 lg:border-b-0 lg:border-r">
+    <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 items-start border-t border-[var(--border)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <aside className="border-b border-[var(--border)] bg-white p-5 lg:sticky lg:top-4 lg:h-[calc(100vh-88px)] lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            submit(input);
+            submit(inputRef.current?.value ?? input);
           }}
           className="flex h-full flex-col gap-5"
         >
           <section>
             <PanelLabel>Request</PanelLabel>
             <p className="text-sm leading-relaxed text-[var(--muted)]">
-              量子計算で解きたい内容をそのまま入力してください。
+              Describe the quantum computation task you want to solve.
             </p>
           </section>
 
           <section className="flex flex-1 flex-col">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="量子計算で解きたい内容を入力..."
-              disabled={busy}
-              className="min-h-52 flex-1 resize-none rounded-sm border border-[var(--border)] bg-[var(--surface)] p-4 text-base leading-relaxed outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--ink)] disabled:opacity-60"
-            />
+            <div className="relative flex flex-1">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Describe the quantum computation task..."
+                disabled={busy}
+                className="min-h-52 flex-1 resize-none rounded-sm border border-[var(--border)] bg-[var(--surface)] p-4 pb-12 text-base leading-relaxed outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--ink)] disabled:opacity-60"
+              />
+              <div className="absolute bottom-3 right-4 flex items-center">
+                <label className="relative inline-flex items-center">
+                  <select
+                    aria-label="Model mode"
+                    value={modelTier}
+                    onChange={(e) => setModelTier(e.target.value as ModelTier)}
+                    disabled={busy}
+                    className="appearance-none border-0 bg-transparent py-1 pl-0 pr-7 text-lg font-medium text-[#8d8d8d] outline-none transition hover:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="default">Default</option>
+                    <option value="pro">Pro</option>
+                  </select>
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[#8d8d8d]"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4 6l4 4 4-4" />
+                    </svg>
+                  </span>
+                </label>
+              </div>
+            </div>
           </section>
 
           <details className="rounded-sm border border-[var(--border)] bg-white">
@@ -121,9 +290,33 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   ))}
                 </div>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  Auto では LLM が問題に合う framework を選びます。
+                  In Auto mode, the LLM chooses a framework that fits the problem.
                 </span>
               </div>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  Simulator
+                </span>
+                <select
+                  value={simulator}
+                  onChange={(e) =>
+                    setSimulator(e.target.value as SimulatorPreference)
+                  }
+                  disabled={busy || framework === "auto"}
+                  className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)] disabled:opacity-60"
+                >
+                  {simulatorOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs leading-relaxed text-[var(--muted)]">
+                  {getSimulatorOption(simulator)?.help ??
+                    "Choose a framework to show its compatible simulators."}
+                </span>
+              </label>
 
               <label className="flex flex-col gap-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
@@ -143,7 +336,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   <option value="8192">8,192</option>
                 </select>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  測定を何回繰り返すか。未指定なら LLM が問題に合わせて決めます。
+                  Number of measurement repetitions. If unspecified, the LLM chooses a value for the problem.
                 </span>
               </label>
 
@@ -165,15 +358,16 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   <option value="500">500</option>
                 </select>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  VQE/QAOA の古典最適化反復上限。未指定なら LLM が選びます。
+                  Classical optimizer iteration limit for VQE/QAOA. If unspecified, the LLM chooses a value.
                 </span>
               </label>
             </div>
           </details>
 
           <button
-            type="submit"
-            disabled={busy || !input.trim()}
+            type="button"
+            onClick={() => submit(inputRef.current?.value ?? input)}
+            disabled={busy}
             className="rounded-sm bg-[var(--ink)] px-5 py-4 text-base font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-35"
           >
             {busy ? "Generating" : "Generate"}
@@ -196,8 +390,13 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
               {messages.map((m) => (
                 <MessageView key={m.id} message={m} />
               ))}
+              {finalReport && <AnalysisReportPanel report={finalReport} />}
               {finalCode && (
-                <FinalOutputPanel code={finalCode} openqasm={finalOpenQasm} />
+                <FinalOutputPanel
+                  code={finalCode}
+                  openqasm={finalOpenQasm}
+                  report={finalReport}
+                />
               )}
             </div>
           )}
@@ -224,7 +423,12 @@ function MessageView({ message }: { message: UIMessage }) {
     >
       {!isUser && (
         <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase text-[var(--muted)]">
-          <span className="h-2 w-2 rounded-full bg-[var(--ink)]" />
+          <img
+            src="/namekoq-icon.svg"
+            alt=""
+            className="h-5 w-5 rounded-full object-contain"
+            aria-hidden="true"
+          />
           namekoQ
         </div>
       )}
@@ -268,7 +472,7 @@ function PartView({ part }: { part: UIMessage["parts"][number] }) {
   if (part.type === "reasoning") {
     return (
       <details className="text-xs text-[var(--muted)]">
-        <summary className="cursor-pointer">思考</summary>
+        <summary className="cursor-pointer">Reasoning</summary>
         <div className="mt-2 whitespace-pre-wrap">{part.text}</div>
       </details>
     );
@@ -366,6 +570,51 @@ interface FinalOpenQasm {
   notes?: string[];
 }
 
+interface AnalysisReport {
+  title: string;
+  createdAt: string;
+  userRequest: string;
+  assistantSummary?: string;
+  plan?: PlanShape;
+  simulation?: {
+    toolName: string;
+    framework?: QuantumFramework;
+    purpose?: string;
+    durationMs?: number;
+    parsed?: unknown;
+    stderr?: string;
+  };
+  verification?: VerifyOutput;
+  openqasm?: {
+    ok?: boolean;
+    framework?: QuantumFramework;
+    version?: string | null;
+    notes?: string[];
+    error?: string | null;
+  };
+  artifacts: string[];
+  limitations: string[];
+}
+
+interface DirectSimulationResult {
+  ok: boolean;
+  framework?: QuantumFramework | null;
+  simulator?: string | null;
+  source?: string | null;
+  durationMs?: number;
+  totalMs?: number;
+  stdout?: string;
+  stderr?: string;
+  parsed?: unknown;
+}
+
+interface GeneratedQuantumApp {
+  title: string;
+  concept: string;
+  html: string;
+  usageNotes: string[];
+}
+
 interface ActivityStep {
   id:
     | "request_plan"
@@ -388,15 +637,15 @@ function AgentProgress({
   const doneCount = activity.filter((step) => step.state === "done").length;
   const hasRun = activity.some((step) => step.state !== "waiting");
 
-  return (
-    <section className="overflow-hidden rounded-sm border border-[var(--border)] bg-white">
+  const content = (
+    <>
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
             {activity.some((step) => step.state === "error") ? "Error" : "Run"}
           </div>
           <div className="hidden text-sm text-[var(--muted)] sm:block">
-            {busy ? active?.detail ?? "準備中" : hasRun ? "完了" : "未実行"}
+            {busy ? active?.detail ?? "Preparing" : hasRun ? "Complete" : "Not run"}
           </div>
         </div>
         <div className="flex items-center gap-2 font-mono text-xs text-[var(--muted)]">
@@ -435,6 +684,31 @@ function AgentProgress({
           </div>
         ))}
       </div>
+    </>
+  );
+
+  if (busy) {
+    return (
+      <LiquidMetalCard
+        className="rounded-md border border-[var(--border)] p-[1px] shadow-[0_12px_34px_rgba(17,24,39,0.10)]"
+        speed={0.42}
+        repetition={3}
+        softness={0.58}
+        shiftRed={0.16}
+        shiftBlue={0.38}
+        distortion={0.12}
+        scale={7}
+      >
+        <section className="overflow-hidden rounded-[6px] border border-white/70 bg-white/95 backdrop-blur">
+          {content}
+        </section>
+      </LiquidMetalCard>
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-sm border border-[var(--border)] bg-white">
+      {content}
     </section>
   );
 }
@@ -442,13 +716,15 @@ function AgentProgress({
 function FinalOutputPanel({
   code,
   openqasm,
+  report,
 }: {
   code: FinalGeneratedCode;
   openqasm: FinalOpenQasm | null;
+  report: AnalysisReport | null;
 }) {
   const selectedSourceFramework = code.framework ?? openqasm?.framework ?? "qiskit";
-  const initialEditorOpenqasm =
-    openqasm?.editorOpenqasm ?? openqasm?.openqasm ?? "";
+  const rawOpenqasm = openqasm?.openqasm ?? "";
+  const initialEditorOpenqasm = getEditorCompatibleOpenQasm(openqasm);
   const [editorOpenqasm, setEditorOpenqasm] = useState(
     initialEditorOpenqasm,
   );
@@ -458,7 +734,8 @@ function FinalOutputPanel({
       : { items: [], index: -1 },
   );
   const qasmFileInputRef = useRef<HTMLInputElement | null>(null);
-  const liveOpenqasm = editorOpenqasm || openqasm?.openqasm || "";
+  const editorCanRender = isEditorCompatibleOpenQasm(editorOpenqasm);
+  const liveOpenqasm = editorOpenqasm || rawOpenqasm;
   const liveOpenqasmVersion = inferOpenQasmVersion(
     liveOpenqasm,
     openqasm?.openqasmVersion,
@@ -506,23 +783,55 @@ function FinalOutputPanel({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
+  const [runFramework, setRunFramework] =
+    useState<QuantumFramework>(selectedSourceFramework);
+  const [runSimulator, setRunSimulator] = useState<SimulatorPreference>("auto");
   const canUndoQasm = qasmHistory.index > 0;
   const canRedoQasm =
     qasmHistory.index >= 0 && qasmHistory.index < qasmHistory.items.length - 1;
-
+  const runSimulatorOptions = useMemo(
+    () => getSimulatorOptions(runFramework),
+    [runFramework],
+  );
+  const directRunCode = useMemo(
+    () =>
+      createDirectRunCode({
+        selectedFormat,
+        editedCode,
+        liveOpenqasm,
+        liveOpenqasmVersion: liveOpenqasmVersion ?? undefined,
+        targetFramework: runFramework,
+        simulator: runSimulator,
+      }),
+    [
+      selectedFormat,
+      editedCode,
+      liveOpenqasm,
+      liveOpenqasmVersion,
+      runFramework,
+      runSimulator,
+    ],
+  );
   useEffect(() => {
     setSelectedFormat("source");
+    setRunFramework(selectedSourceFramework);
   }, [code.code, selectedSourceFramework]);
 
   useEffect(() => {
-    const nextOpenqasm = openqasm?.editorOpenqasm ?? openqasm?.openqasm ?? "";
+    if (!runSimulatorOptions.some((option) => option.id === runSimulator)) {
+      setRunSimulator("auto");
+    }
+  }, [runSimulator, runSimulatorOptions]);
+
+  useEffect(() => {
+    const nextOpenqasm = getEditorCompatibleOpenQasm(openqasm);
     setEditorOpenqasm(nextOpenqasm);
     setQasmHistory(
       nextOpenqasm
         ? { items: [nextOpenqasm], index: 0 }
         : { items: [], index: -1 },
     );
-  }, [openqasm?.editorOpenqasm, openqasm?.openqasm]);
+  }, [openqasm]);
 
   useEffect(() => {
     setEditedCode(selectedCode);
@@ -684,7 +993,22 @@ function FinalOutputPanel({
         spellCheck={false}
         className="min-h-96 w-full resize-y border-0 bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
       />
-      {openqasm && editorOpenqasm && (
+      <DirectSimulationPanel
+        code={directRunCode.code}
+        source={directRunCode.source}
+        framework={runFramework}
+        simulator={runSimulator}
+        simulatorOptions={runSimulatorOptions}
+        onFrameworkChange={setRunFramework}
+        onSimulatorChange={setRunSimulator}
+      />
+      <AppBuilderPanel
+        openqasm={liveOpenqasm}
+        sourceCode={code.code}
+        report={report}
+        convertedCodes={liveConvertedCodes}
+      />
+      {openqasm && editorOpenqasm && editorCanRender && (
         <CircuitEditor
           openqasm={editorOpenqasm}
           onChange={(nextOpenqasm) => {
@@ -696,7 +1020,605 @@ function FinalOutputPanel({
           }}
         />
       )}
+      {openqasm && editorOpenqasm && editorCanRender && (
+        <BlochSpherePanel openqasm={editorOpenqasm} />
+      )}
     </section>
+  );
+}
+
+function DirectSimulationPanel({
+  code,
+  source,
+  framework,
+  simulator,
+  simulatorOptions,
+  onFrameworkChange,
+  onSimulatorChange,
+}: {
+  code: string;
+  source: "source" | "openqasm" | "converted";
+  framework: QuantumFramework;
+  simulator: SimulatorPreference;
+  simulatorOptions: SimulatorOption[];
+  onFrameworkChange: (framework: QuantumFramework) => void;
+  onSimulatorChange: (simulator: SimulatorPreference) => void;
+}) {
+  const [result, setResult] = useState<DirectSimulationResult | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    if (!code.trim() || running) return;
+    setRunning(true);
+    setResult(null);
+    try {
+      const response = await fetch("/api/simulate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code, framework, simulator, source }),
+      });
+      const payload = (await response.json()) as DirectSimulationResult;
+      setResult(payload);
+    } catch (err) {
+      setResult({
+        ok: false,
+        stderr: err instanceof Error ? err.message : String(err),
+        parsed: null,
+      });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <section className="border-t border-[var(--border)] bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div>
+          <div className="text-sm font-semibold uppercase tracking-[0.18em]">
+            Run Simulation
+          </div>
+          <div className="mt-1 text-xs text-[var(--muted)]">
+            Execute the edited code or the current circuit-derived code
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={run}
+          disabled={running || !code.trim()}
+          className="rounded-sm border border-[var(--ink)] px-4 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {running ? "Running" : "Run"}
+        </button>
+      </div>
+
+      <div className="grid gap-3 px-4 py-3 lg:grid-cols-[180px_220px_minmax(0,1fr)]">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            Framework
+          </span>
+          <select
+            value={framework}
+            onChange={(event) =>
+              onFrameworkChange(event.target.value as QuantumFramework)
+            }
+            className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)]"
+          >
+            {QUANTUM_FRAMEWORKS.map((item) => (
+              <option key={item} value={item}>
+                {getFrameworkLabel(item)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            Simulator
+          </span>
+          <select
+            value={simulator}
+            onChange={(event) =>
+              onSimulatorChange(event.target.value as SimulatorPreference)
+            }
+            className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)]"
+          >
+            {simulatorOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex items-end text-xs leading-relaxed text-[var(--muted)]">
+          Source: {source}.{" "}
+          {source === "source"
+            ? "For final source code, simulator changes are advisory unless the code itself uses that simulator."
+            : "For OpenQASM-derived code, the selected simulator is injected into the wrapper."}
+        </div>
+      </div>
+
+      {result && (
+        <div className="border-t border-[var(--border)] px-4 py-3">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
+              {result.ok ? "Success" : "Failed"}
+            </span>
+            {result.durationMs != null && (
+              <span className="font-mono text-xs text-[var(--muted)]">
+                {(result.durationMs / 1000).toFixed(1)}s
+              </span>
+            )}
+          </div>
+
+          {result.parsed != null && <ResultVisualization result={result.parsed} />}
+
+          {result.stderr && result.stderr.trim() && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs text-[var(--fg)]">
+                stderr
+              </summary>
+              <pre className="!m-0 !mt-2">{result.stderr}</pre>
+            </details>
+          )}
+
+          {result.stdout && result.stdout.trim() && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs text-[var(--muted)]">
+                stdout
+              </summary>
+              <pre className="!m-0 !mt-2">{result.stdout}</pre>
+            </details>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AppBuilderPanel({
+  openqasm,
+  sourceCode,
+  report,
+  convertedCodes,
+}: {
+  openqasm: string;
+  sourceCode: string;
+  report: AnalysisReport | null;
+  convertedCodes: Partial<Record<QuantumFramework, string>>;
+}) {
+  const defaultIdea = getDefaultAppIdea(report);
+  const [instructions, setInstructions] = useState("");
+  const [generatedApp, setGeneratedApp] = useState<GeneratedQuantumApp | null>(
+    null,
+  );
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generateApp = async () => {
+    if (!openqasm.trim() || generating) return;
+    setGenerating(true);
+    setError(null);
+    setGeneratedApp(null);
+    try {
+      const response = await fetch("/api/app-builder", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          openqasm,
+          sourceCode,
+          convertedCodes,
+          customization: instructions,
+          report,
+        }),
+      });
+      const payload = (await response.json()) as
+        | GeneratedQuantumApp
+        | { error?: string };
+      if (!response.ok || isAppBuilderError(payload)) {
+        throw new Error(
+          isAppBuilderError(payload)
+            ? payload.error ?? "Failed to generate app"
+            : "Failed to generate app",
+        );
+      }
+      setGeneratedApp(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <section className="border-t border-[var(--border)] bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div>
+          <div className="text-sm font-semibold uppercase tracking-[0.18em]">
+            App Builder
+          </div>
+          <div className="mt-1 text-xs text-[var(--muted)]">
+            Turn the final quantum algorithm into a small usable app
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={generateApp}
+          disabled={generating || !openqasm.trim()}
+          className="rounded-sm border border-[var(--ink)] px-4 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {generating ? "Generating" : "Generate App"}
+        </button>
+      </div>
+
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="flex flex-col gap-3">
+          <div>
+            <ReportSubheading>Suggested App Direction</ReportSubheading>
+            <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed">
+              {defaultIdea}
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              Custom Instructions
+            </span>
+            <textarea
+              value={instructions}
+              onChange={(event) => setInstructions(event.target.value)}
+              placeholder="Example: Make this for finance stakeholders rather than researchers. Use Stock A/B/C as asset names. Add cards that explain the result."
+              className="min-h-28 resize-y rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed outline-none focus:border-[var(--ink)]"
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {error && (
+            <div className="rounded-sm border border-[var(--border-strong)] bg-[var(--surface)] p-3 text-sm">
+              {error}
+            </div>
+          )}
+
+          {generatedApp ? (
+            <div className="rounded-sm border border-[var(--border)] bg-white">
+              <div className="border-b border-[var(--border)] px-3 py-2">
+                <div className="text-sm font-semibold">{generatedApp.title}</div>
+                <div className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
+                  {generatedApp.concept}
+                </div>
+              </div>
+              {generatedApp.usageNotes.length > 0 && (
+                <ul className="flex list-disc flex-col gap-1 px-6 py-3 text-xs leading-relaxed text-[var(--muted)]">
+                  {generatedApp.usageNotes.map((note, index) => (
+                    <li key={`${index}-${note.slice(0, 32)}`}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap gap-2 border-t border-[var(--border)] p-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadText(
+                      "namekoq-generated-app.html",
+                      generatedApp.html,
+                      "text/html",
+                    )
+                  }
+                  className="rounded-sm border border-[var(--ink)] px-3 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white"
+                >
+                  Download HTML
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(generatedApp.html)}
+                  className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
+                >
+                  Copy HTML
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid min-h-48 place-items-center rounded-sm border border-dashed border-[var(--border)] bg-[var(--surface)] p-4 text-center text-sm text-[var(--muted)]">
+              Generate an app to get a downloadable single-file HTML prototype.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function isAppBuilderError(
+  value: GeneratedQuantumApp | { error?: string },
+): value is { error?: string } {
+  return "error" in value;
+}
+
+function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
+  const resultItems = report.simulation?.parsed
+    ? extractReportResultItems(report.simulation.parsed)
+    : [];
+  const counts = report.simulation?.parsed ? findCounts(report.simulation.parsed) : null;
+  const topCounts = counts
+    ? Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+    : [];
+  const exportBaseName = createReportFilenameBase(report);
+  const markdown = createReportMarkdown(report);
+  const json = JSON.stringify(report, null, 2);
+
+  return (
+    <section className="overflow-hidden rounded-sm border border-[var(--border-strong)] bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold uppercase tracking-[0.18em]">
+            Analysis Report
+          </div>
+          <div className="mt-1 text-xs text-[var(--muted)]">
+            {report.createdAt} / reproducible run summary
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              downloadText(`${exportBaseName}.md`, markdown, "text/markdown")
+            }
+            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
+          >
+            Export MD
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              downloadText(`${exportBaseName}.json`, json, "application/json")
+            }
+            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
+          >
+            Export JSON
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+        <div className="flex flex-col gap-4">
+          <section>
+            <ReportHeading>Executive Summary</ReportHeading>
+            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+              {report.assistantSummary ??
+                "The execution plan, simulation result, and validation result are summarized below."}
+            </div>
+          </section>
+
+          <section>
+            <ReportHeading>Problem Setup</ReportHeading>
+            <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed">
+              {report.userRequest}
+            </div>
+          </section>
+
+          {report.plan && (
+            <section>
+              <ReportHeading>Method</ReportHeading>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <ReportField label="Framework" value={report.plan.framework} />
+                <ReportField label="Algorithm" value={report.plan.algorithm} />
+                <ReportField
+                  label="Qubits"
+                  value={
+                    report.plan.qubits_estimate != null
+                      ? `${report.plan.qubits_estimate}`
+                      : undefined
+                  }
+                />
+                <ReportField
+                  label="Runtime Estimate"
+                  value={
+                    report.plan.expected_runtime_sec != null
+                      ? `${report.plan.expected_runtime_sec}s`
+                      : undefined
+                  }
+                />
+              </div>
+              {report.plan.problem_summary && (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+                  {report.plan.problem_summary}
+                </p>
+              )}
+              {report.plan.algorithm_rationale && (
+                <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
+                  {report.plan.algorithm_rationale}
+                </p>
+              )}
+              {report.plan.parameters &&
+                Object.keys(report.plan.parameters).length > 0 && (
+                  <div className="mt-3">
+                    <ReportSubheading>Parameters</ReportSubheading>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {Object.entries(report.plan.parameters).map(([key, value]) => (
+                        <ReportField
+                          key={key}
+                          label={key}
+                          value={formatReportValue(value)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </section>
+          )}
+
+          {report.verification && (
+            <section>
+              <ReportHeading>Validation</ReportHeading>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-sm border border-[var(--ink)] px-2 py-1 text-xs font-medium">
+                  {report.verification.aligned ? "Aligned" : "Needs Review"}
+                </span>
+                {report.verification.confidence && (
+                  <span className="text-xs text-[var(--muted)]">
+                    confidence: {report.verification.confidence}
+                  </span>
+                )}
+              </div>
+              {report.verification.summary && (
+                <p className="mt-2 text-sm leading-relaxed">
+                  {report.verification.summary}
+                </p>
+              )}
+              {report.verification.mismatches &&
+                report.verification.mismatches.length > 0 && (
+                  <ul className="mt-3 flex flex-col gap-2">
+                    {report.verification.mismatches.map((item) => (
+                      <li
+                        key={`${item.aspect}-${item.expected}-${item.actual}`}
+                        className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-2 text-xs"
+                      >
+                        <div className="font-mono">{item.aspect}</div>
+                        <div className="mt-1 text-[var(--muted)]">
+                          expected: {item.expected}
+                        </div>
+                        <div className="text-[var(--muted)]">
+                          actual: {item.actual}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+            </section>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <section>
+            <ReportHeading>Key Results</ReportHeading>
+            {resultItems.length > 0 ? (
+              <div className="grid gap-2">
+                {resultItems.map((metric) => (
+                  <ReportMetric
+                    key={metric.key}
+                    label={metric.key}
+                    value={metric.value}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-[var(--muted)]">
+                No numeric metrics were detected.
+              </div>
+            )}
+          </section>
+
+          {topCounts.length > 0 && (
+            <section>
+              <ReportHeading>Top Measurement Outcomes</ReportHeading>
+              <div className="rounded-sm border border-[var(--border)]">
+                {topCounts.map(([state, value]) => (
+                  <div
+                    key={state}
+                    className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm last:border-b-0"
+                  >
+                    <span className="font-mono">{state}</span>
+                    <span className="font-mono text-xs text-[var(--muted)]">
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <ReportHeading>Artifacts</ReportHeading>
+            <div className="flex flex-wrap gap-2">
+              {report.artifacts.map((artifact) => (
+                <span
+                  key={artifact}
+                  className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs"
+                >
+                  {artifact}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          {report.openqasm && (
+            <section>
+              <ReportHeading>OpenQASM</ReportHeading>
+              <div className="text-sm">
+                {report.openqasm.ok ? "Extracted" : "Extraction failed or incomplete"}
+                {report.openqasm.version ? ` / v${report.openqasm.version}` : ""}
+              </div>
+              {report.openqasm.notes && report.openqasm.notes.length > 0 && (
+                <ul className="mt-2 flex list-disc flex-col gap-1 pl-4 text-xs text-[var(--muted)]">
+                  {report.openqasm.notes.map((note, index) => (
+                    <li key={`${index}-${note.slice(0, 24)}`}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              {report.openqasm.error && (
+                <div className="mt-2 text-xs text-[var(--muted)]">
+                  {report.openqasm.error}
+                </div>
+              )}
+            </section>
+          )}
+
+          {report.limitations.length > 0 && (
+            <section>
+              <ReportHeading>Limitations</ReportHeading>
+              <ul className="flex list-disc flex-col gap-1 pl-4 text-xs leading-relaxed text-[var(--muted)]">
+                {report.limitations.map((item, index) => (
+                  <li key={`${index}-${item.slice(0, 32)}`}>{item}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ReportHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+      {children}
+    </div>
+  );
+}
+
+function ReportSubheading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+      {children}
+    </div>
+  );
+}
+
+function ReportField({ label, value }: { label: string; value?: unknown }) {
+  return (
+    <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3">
+      <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+        {label}
+      </div>
+      <div className="mt-1 truncate font-mono text-sm">
+        {value == null || value === "" ? "-" : String(value)}
+      </div>
+    </div>
+  );
+}
+
+function ReportMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3">
+      <div className="truncate font-mono text-[11px] text-[var(--muted)]">
+        {label}
+      </div>
+      <div className="mt-1 break-words text-lg font-semibold">{value}</div>
+    </div>
   );
 }
 
@@ -769,7 +1691,7 @@ function ToolPart({ part }: { part: unknown }) {
     >
       {input?.purpose && (
         <div className="border-b border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
-          目的: {input.purpose}
+          Purpose: {input.purpose}
         </div>
       )}
       {input?.code && (
@@ -831,7 +1753,7 @@ function OpenQasmToolPart({
       <div className="flex flex-col gap-3 px-3 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
-            {output?.ok ? "抽出済み" : failed ? "要確認" : "抽出中"}
+            {output?.ok ? "Extracted" : failed ? "Needs review" : "Extracting"}
           </span>
           {output?.framework && (
             <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs">
@@ -853,7 +1775,7 @@ function OpenQasmToolPart({
 
         {output?.ok && (
           <div className="text-xs text-[var(--muted)]">
-            OpenQASM と変換後コードは Final Output で切り替えて確認できます。
+            OpenQASM and converted code are available in Final Output.
           </div>
         )}
       </div>
@@ -869,7 +1791,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
   const [editedCode, setEditedCode] = useState<string | null>(null);
   const lastInitialRef = useRef(initialCode);
 
-  // initialCode が変わったら編集内容をリセット (setState なし = 再レンダー不発生)
+  // Reset local edits when initialCode changes.
   if (lastInitialRef.current !== initialCode) {
     lastInitialRef.current = initialCode;
     if (editedCode !== null) setEditedCode(null);
@@ -880,7 +1802,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
   return (
     <details className="border-t border-[var(--border)]">
       <summary className="cursor-pointer px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--fg)]">
-        生成コードを表示・編集 ({code.split("\n").length} 行)
+        View/edit generated code ({code.split("\n").length} lines)
       </summary>
       <textarea
         value={code}
@@ -889,7 +1811,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
         className="min-h-80 w-full resize-y border-0 border-t border-[var(--border)] bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
       />
       <div className="border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
-        編集内容はこの画面上だけの下書きです。再実行にはまだ接続していません。
+        Edits are local drafts in this panel.
       </div>
     </details>
   );
@@ -1038,7 +1960,7 @@ function PlanToolPart({
       <div className="flex flex-col gap-3 px-3 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
-            {plan ? "計画済み" : "計画中"}
+            {plan ? "Planned" : "Planning"}
           </span>
           {plan?.algorithm && (
             <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 font-mono text-xs">
@@ -1062,21 +1984,21 @@ function PlanToolPart({
           )}
           {plan?.expected_runtime_sec != null && (
             <span className="text-xs text-[var(--muted)]">
-              約 {plan.expected_runtime_sec}s
+              approx. {plan.expected_runtime_sec}s
             </span>
           )}
         </div>
 
         {plan?.problem_summary && (
           <div className="text-sm">
-            <span className="text-[var(--muted)]">課題: </span>
+            <span className="text-[var(--muted)]">Task: </span>
             {plan.problem_summary}
           </div>
         )}
 
         {plan?.algorithm_rationale && (
           <div className="text-xs leading-relaxed text-[var(--muted)]">
-            <span>選択理由: </span>
+            <span>Rationale: </span>
             {plan.algorithm_rationale}
           </div>
         )}
@@ -1105,7 +2027,7 @@ function PlanToolPart({
         {plan?.success_criteria && (
           <details>
             <summary className="cursor-pointer text-xs text-[var(--muted)] hover:text-[var(--fg)]">
-              成功条件
+              Success criteria
             </summary>
             <pre className="!mt-1 !text-xs">
               {JSON.stringify(plan.success_criteria, null, 2)}
@@ -1115,7 +2037,7 @@ function PlanToolPart({
 
         {plan?.expected_output_keys && plan.expected_output_keys.length > 0 && (
           <div className="text-xs text-[var(--muted)]">
-            <span>期待出力キー: </span>
+            <span>Expected output keys: </span>
             <span className="font-mono text-[var(--fg)]">
               {plan.expected_output_keys.join(", ")}
             </span>
@@ -1155,7 +2077,7 @@ function VerifyToolPart({
 }) {
   const aligned = output?.aligned;
   const verdictLabel =
-    aligned === true ? "整合" : aligned === false ? "要確認" : "判定中";
+    aligned === true ? "Aligned" : aligned === false ? "Needs review" : "Checking";
 
   return (
     <ToolCard
@@ -1173,7 +2095,7 @@ function VerifyToolPart({
             </span>
             {output.confidence && (
               <span className="text-xs text-[var(--muted)]">
-                自信度: {output.confidence}
+                Confidence: {output.confidence}
               </span>
             )}
           </div>
@@ -1195,10 +2117,10 @@ function VerifyToolPart({
                   >
                     <div className="font-mono">{m.aspect}</div>
                     <div className="mt-1 text-[var(--muted)]">
-                      <span>期待:</span> {m.expected}
+                      <span>Expected:</span> {m.expected}
                     </div>
                     <div className="text-[var(--muted)]">
-                      <span>実際:</span> {m.actual}
+                      <span>Actual:</span> {m.actual}
                     </div>
                   </li>
                 ))}
@@ -1224,18 +2146,18 @@ function VerifyToolPart({
       {input && (input.userRequest || input.interpretation) && (
         <details className="border-t border-[var(--border)]">
           <summary className="cursor-pointer px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--fg)]">
-            検証への入力
+            Validation input
           </summary>
           <div className="flex flex-col gap-2 px-3 pb-3 text-xs">
             {input.userRequest && (
               <div>
-                <div className="text-[var(--muted)]">ユーザー要望</div>
+                <div className="text-[var(--muted)]">User request</div>
                 <div className="whitespace-pre-wrap">{input.userRequest}</div>
               </div>
             )}
             {input.interpretation && (
               <div>
-                <div className="text-[var(--muted)]">エージェントの解釈</div>
+                <div className="text-[var(--muted)]">Agent interpretation</div>
                 <div className="whitespace-pre-wrap">{input.interpretation}</div>
               </div>
             )}
@@ -1255,25 +2177,25 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
     {
       id: "request_plan",
       title: "Plan",
-      detail: "要望を量子計算の実行計画に変換",
+      detail: "Convert the request into a quantum execution plan",
       state: "waiting",
     },
     {
       id: "simulate",
       title: "Simulate",
-      detail: "選択frameworkのシミュレータで実行",
+      detail: "Run with the selected framework simulator",
       state: "waiting",
     },
     {
       id: "verify_intent_alignment",
       title: "Verify",
-      detail: "要望・計画・コード・結果の整合性を検証",
+      detail: "Validate request, plan, code, and result alignment",
       state: "waiting",
     },
     {
       id: "openqasm",
       title: "OpenQASM",
-      detail: "最終コードとは別に回路部分をOpenQASMへ抽出",
+      detail: "Extract the circuit portion as OpenQASM",
       state: "waiting",
     },
   ];
@@ -1371,12 +2293,7 @@ function getFinalGeneratedCode(
 ): FinalGeneratedCode | null {
   if (busy) return null;
 
-  const toolParts = messages
-    .flatMap((message) => message.parts)
-    .filter((part): part is UIMessage["parts"][number] & { type: string } =>
-      part.type.startsWith("tool-"),
-    )
-    .map((part) => part as ToolPartShape);
+  const toolParts = getLatestRunToolParts(messages);
 
   for (const part of [...toolParts].reverse()) {
     if (!isSimulationToolType(part.type)) continue;
@@ -1398,12 +2315,7 @@ function getFinalOpenQasm(
 ): FinalOpenQasm | null {
   if (busy) return null;
 
-  const toolParts = messages
-    .flatMap((message) => message.parts)
-    .filter((part): part is UIMessage["parts"][number] & { type: string } =>
-      part.type.startsWith("tool-"),
-    )
-    .map((part) => part as ToolPartShape);
+  const toolParts = getLatestRunToolParts(messages);
 
   for (const part of [...toolParts].reverse()) {
     if (part.type !== "tool-convert_to_openqasm") continue;
@@ -1422,10 +2334,408 @@ function getFinalOpenQasm(
   return null;
 }
 
+function getFinalAnalysisReport(
+  messages: UIMessage[],
+  busy: boolean,
+): AnalysisReport | null {
+  if (busy) return null;
+
+  const toolParts = getLatestRunToolParts(messages);
+
+  const planPart = [...toolParts]
+    .reverse()
+    .find((part) => part.type === "tool-request_plan" && part.output?.plan);
+  const simulationPart = [...toolParts]
+    .reverse()
+    .find((part) => isSimulationToolType(part.type) && part.output?.ok === true);
+  const verifyPart = [...toolParts]
+    .reverse()
+    .find((part) => part.type === "tool-verify_intent_alignment" && part.output);
+  const openqasmPart = [...toolParts]
+    .reverse()
+    .find((part) => part.type === "tool-convert_to_openqasm" && part.output);
+
+  if (!planPart && !simulationPart && !verifyPart) return null;
+
+  const userRequest = stripAdvancedSettings(getLatestMessageText(messages, "user"));
+  const assistantSummary = getLatestAssistantText(messages);
+  const artifacts = [
+    simulationPart?.input?.code ? "Python source" : null,
+    openqasmPart?.output?.openqasm ? "OpenQASM" : null,
+    openqasmPart?.output?.convertedFrameworkCodes
+      ? "Framework conversion snippets"
+      : null,
+    "Markdown report",
+    "JSON report",
+  ].filter((item): item is string => Boolean(item));
+  const limitations = buildReportLimitations({
+    simulationPart,
+    verifyPart,
+    openqasmPart,
+  });
+
+  return {
+    title: "namekoQ Analysis Report",
+    createdAt: new Date().toLocaleString("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    userRequest,
+    assistantSummary,
+    plan: planPart?.output?.plan,
+    simulation: simulationPart
+      ? {
+          toolName: simulationPart.type.replace(/^tool-/, ""),
+          framework: getFrameworkFromSimulationToolType(simulationPart.type),
+          purpose: simulationPart.input?.purpose,
+          durationMs: simulationPart.output?.durationMs,
+          parsed: simulationPart.output?.parsed,
+          stderr: simulationPart.output?.stderr,
+        }
+      : undefined,
+    verification: verifyPart?.output
+      ? {
+          aligned: verifyPart.output.aligned,
+          confidence: verifyPart.output.confidence,
+          mismatches: verifyPart.output.mismatches,
+          suggestions: verifyPart.output.suggestions,
+          summary: verifyPart.output.summary,
+          durationMs: verifyPart.output.durationMs,
+        }
+      : undefined,
+    openqasm: openqasmPart?.output
+      ? {
+          ok: openqasmPart.output.ok,
+          framework: openqasmPart.output.framework,
+          version: openqasmPart.output.openqasmVersion,
+          notes: openqasmPart.output.notes,
+          error: openqasmPart.output.openqasmError,
+        }
+      : undefined,
+    artifacts,
+    limitations,
+  };
+}
+
+function getLatestRunToolParts(messages: UIMessage[]): ToolPartShape[] {
+  const latestUserIndex = findLatestMessageIndex(messages, "user");
+  const scopedMessages =
+    latestUserIndex >= 0 ? messages.slice(latestUserIndex + 1) : messages;
+  return getToolParts(scopedMessages);
+}
+
+function getToolParts(messages: UIMessage[]): ToolPartShape[] {
+  return messages
+    .flatMap((message) => message.parts)
+    .filter((part): part is UIMessage["parts"][number] & { type: string } =>
+      part.type.startsWith("tool-"),
+    )
+    .map((part) => part as ToolPartShape);
+}
+
+function findLatestMessageIndex(
+  messages: UIMessage[],
+  role: "user" | "assistant",
+): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === role) return i;
+  }
+  return -1;
+}
+
+function getLatestMessageText(
+  messages: UIMessage[],
+  role: "user" | "assistant",
+): string {
+  const message = [...messages].reverse().find((item) => item.role === role);
+  if (!message) return "";
+  return message.parts
+    .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> =>
+      part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+function getLatestAssistantText(messages: UIMessage[]): string | undefined {
+  const text = getLatestMessageText(messages, "assistant");
+  return text.length > 0 ? text : undefined;
+}
+
+function stripAdvancedSettings(text: string): string {
+  return text.split("\n\nAdditional settings:")[0]?.trim() ?? text.trim();
+}
+
+function buildReportLimitations({
+  simulationPart,
+  verifyPart,
+  openqasmPart,
+}: {
+  simulationPart?: ToolPartShape;
+  verifyPart?: ToolPartShape;
+  openqasmPart?: ToolPartShape;
+}): string[] {
+  const items = new Set<string>();
+  items.add(
+    "LLM generated code should be reviewed before use in research conclusions.",
+  );
+  items.add(
+    "OpenQASM artifacts represent the circuit portion only; Hamiltonians, optimizers, and classical post-processing may not be encoded.",
+  );
+
+  if (simulationPart?.output?.stderr?.trim()) {
+    items.add("The simulation produced stderr output; inspect the detailed run log.");
+  }
+  if (verifyPart?.output?.aligned === false) {
+    items.add("The critic marked this run as not fully aligned with the request.");
+  }
+  if (verifyPart?.output?.suggestions?.length) {
+    for (const suggestion of verifyPart.output.suggestions.slice(0, 3)) {
+      items.add(suggestion);
+    }
+  }
+  if (openqasmPart?.output?.ok === false || openqasmPart?.output?.openqasmError) {
+    items.add("OpenQASM extraction was incomplete or failed for this run.");
+  }
+  if (openqasmPart?.output?.notes?.length) {
+    for (const note of openqasmPart.output.notes.slice(0, 4)) {
+      items.add(note);
+    }
+  }
+
+  return Array.from(items);
+}
+
+function getDefaultAppIdea(report: AnalysisReport | null): string {
+  const algorithm = report?.plan?.algorithm ?? "";
+  const result = isRecord(report?.simulation?.parsed)
+    ? report?.simulation?.parsed
+    : {};
+
+  if (/qaoa/i.test(algorithm)) {
+    if (result && ("selected_assets" in result || "counts_top" in result)) {
+      return "A decision dashboard powered by the QAOA measurement result. It compares top bitstrings, candidate selections, and objective values so the user can inspect the final option.";
+    }
+    return "An optimization result viewer for QAOA candidate solutions. It helps users compare the bitstring distribution and constraint satisfaction before choosing a solution.";
+  }
+
+  if (/vqe/i.test(algorithm)) {
+    return "An experiment report and energy inspection tool for VQE results. It highlights estimated energy, parameters, difference from known references, and modeling limitations.";
+  }
+
+  if (/grover/i.test(algorithm)) {
+    return "A search demonstration app for Grover results, showing the target item, observed top states, and success probability.";
+  }
+
+  if (/qpe|phase/i.test(algorithm)) {
+    return "A phase-estimation app that compares inferred phase, candidate bitstrings, and error against the target value.";
+  }
+
+  if (/bell|ghz/i.test(algorithm)) {
+    return "An entanglement measurement explorer for Bell/GHZ results, showing correlated outcomes and circuit artifacts.";
+  }
+
+  return "A compact analysis app built from the final quantum circuit and execution result, focused on helping users interpret and act on the result rather than just viewing the circuit.";
+}
+
+function createReportMarkdown(report: AnalysisReport): string {
+  const resultItems = report.simulation?.parsed
+    ? extractReportResultItems(report.simulation.parsed)
+    : [];
+  const counts = report.simulation?.parsed ? findCounts(report.simulation.parsed) : null;
+  const topCounts = counts
+    ? Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+    : [];
+
+  return compactMarkdownLines([
+    `# ${report.title}`,
+    "",
+    `- Created: ${report.createdAt}`,
+    `- Framework: ${report.plan?.framework ?? report.simulation?.framework ?? "-"}`,
+    `- Algorithm: ${report.plan?.algorithm ?? "-"}`,
+    `- Validation: ${
+      report.verification?.aligned == null
+        ? "-"
+        : report.verification.aligned
+        ? "aligned"
+        : "needs review"
+    }`,
+    "",
+    "## Executive Summary",
+    "",
+    report.assistantSummary ?? "No final assistant summary was available.",
+    "",
+    "## User Request",
+    "",
+    report.userRequest || "-",
+    "",
+    "## Method",
+    "",
+    `- Domain: ${report.plan?.domain ?? "-"}`,
+    `- Framework: ${report.plan?.framework ?? "-"}`,
+    `- Algorithm: ${report.plan?.algorithm ?? "-"}`,
+    `- Qubits: ${report.plan?.qubits_estimate ?? "-"}`,
+    `- Runtime estimate: ${
+      report.plan?.expected_runtime_sec != null
+        ? `${report.plan.expected_runtime_sec}s`
+        : "-"
+    }`,
+    "",
+    report.plan?.problem_summary ? `Problem summary: ${report.plan.problem_summary}` : "",
+    report.plan?.algorithm_rationale
+      ? `Rationale: ${report.plan.algorithm_rationale}`
+      : "",
+    "",
+    "## Parameters",
+    "",
+    "```json",
+    JSON.stringify(report.plan?.parameters ?? {}, null, 2),
+    "```",
+    "",
+    "## Key Results",
+    "",
+    ...(resultItems.length > 0
+      ? resultItems.map((metric) => `- ${metric.key}: ${metric.value}`)
+      : ["- No scalar metrics detected."]),
+    "",
+    ...(topCounts.length > 0
+      ? [
+          "## Measurement Outcomes",
+          "",
+          "| State | Count |",
+          "|---|---:|",
+          ...topCounts.map(([state, value]) => `| ${state} | ${value} |`),
+          "",
+        ]
+      : []),
+    "## Validation",
+    "",
+    `- Aligned: ${report.verification?.aligned ?? "-"}`,
+    `- Confidence: ${report.verification?.confidence ?? "-"}`,
+    report.verification?.summary ?? "",
+    "",
+    ...(report.verification?.mismatches?.length
+      ? [
+          "### Mismatches",
+          "",
+          ...report.verification.mismatches.map(
+            (item) =>
+              `- ${item.aspect}: expected ${item.expected}; actual ${item.actual}`,
+          ),
+          "",
+        ]
+      : []),
+    ...(report.verification?.suggestions?.length
+      ? [
+          "### Suggestions",
+          "",
+          ...report.verification.suggestions.map((item) => `- ${item}`),
+          "",
+        ]
+      : []),
+    "## OpenQASM",
+    "",
+    `- Status: ${report.openqasm?.ok ? "extracted" : "not available"}`,
+    `- Version: ${report.openqasm?.version ?? "-"}`,
+    ...(report.openqasm?.notes?.length
+      ? ["", ...report.openqasm.notes.map((note) => `- ${note}`)]
+      : []),
+    report.openqasm?.error ? `\nError: ${report.openqasm.error}` : "",
+    "",
+    "## Limitations",
+    "",
+    ...report.limitations.map((item) => `- ${item}`),
+    "",
+    "## Artifacts",
+    "",
+    ...report.artifacts.map((artifact) => `- ${artifact}`),
+    "",
+  ]);
+}
+
+function downloadText(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type: `${type};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function compactMarkdownLines(lines: Array<string | undefined>): string {
+  const compacted: string[] = [];
+  for (const line of lines) {
+    if (line === undefined) continue;
+    const isBlank = line.trim() === "";
+    const previousBlank = compacted[compacted.length - 1]?.trim() === "";
+    if (isBlank && previousBlank) continue;
+    compacted.push(line);
+  }
+  return compacted.join("\n").trim() + "\n";
+}
+
+function createReportFilenameBase(report: AnalysisReport): string {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-")
+    .replace(/T/, "_")
+    .slice(0, 19);
+  const algorithm = sanitizeFilenamePart(report.plan?.algorithm ?? "run");
+  const framework = sanitizeFilenamePart(
+    report.plan?.framework ?? report.simulation?.framework ?? "quantum",
+  );
+  return `namekoq-report_${framework}_${algorithm}_${timestamp}`;
+}
+
+function sanitizeFilenamePart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+function extractReportResultItems(
+  value: unknown,
+): Array<{ key: string; value: string }> {
+  if (!isRecord(value)) return [];
+  return Object.entries(value)
+    .filter(([key]) => !["counts", "counts_top", "measurement_counts"].includes(key))
+    .map(([key, item]) => ({ key, value: formatReportValue(item) }))
+    .filter((item) => item.value.length > 0)
+    .slice(0, 12);
+}
+
+function formatReportValue(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "number") return formatNumber(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+  if (Array.isArray(value)) {
+    const rendered = JSON.stringify(value);
+    return rendered.length > 180 ? `${rendered.slice(0, 177)}...` : rendered;
+  }
+  if (isRecord(value)) {
+    const rendered = JSON.stringify(value);
+    return rendered.length > 220 ? `${rendered.slice(0, 217)}...` : rendered;
+  }
+  return String(value);
+}
+
 function withAdvancedSettings(
   text: string,
   settings: {
     framework: FrameworkPreference;
+    simulator: SimulatorPreference;
     shots: string;
     maxIterations: string;
   },
@@ -1434,17 +2744,25 @@ function withAdvancedSettings(
 
   if (settings.framework !== "auto") {
     directives.push(
-      `framework は ${getFrameworkLabel(settings.framework)} を使ってください`,
-      "他の framework からの変換ではなく、選択された framework 向けのコードを最初から生成してください",
+      `Use ${getFrameworkLabel(settings.framework)} as the framework`,
+      "Generate native code for the selected framework rather than translating from another framework",
+    );
+  }
+
+  const simulatorOption = getSimulatorOption(settings.simulator);
+  if (settings.simulator !== "auto" && simulatorOption?.directive) {
+    directives.push(
+      `Use ${simulatorOption.label} as the simulator`,
+      simulatorOption.directive,
     );
   }
 
   if (settings.shots !== "auto") {
-    directives.push(`shots は ${settings.shots} にしてください`);
+    directives.push(`Use ${settings.shots} shots`);
   }
   if (settings.maxIterations !== "auto") {
     directives.push(
-      `VQE/QAOA の max_iterations は ${settings.maxIterations} にしてください`,
+      `Use ${settings.maxIterations} as max_iterations for VQE/QAOA`,
     );
   }
 
@@ -1453,7 +2771,7 @@ function withAdvancedSettings(
   return [
     text.trim(),
     "",
-    "追加設定:",
+    "Additional settings:",
     ...directives.map((directive) => `- ${directive}`),
   ].join("\n");
 }
@@ -1469,8 +2787,95 @@ function getFrameworkPreferenceLabel(framework: FrameworkPreference): string {
   return getFrameworkLabel(framework);
 }
 
+function getSimulatorOptions(framework: FrameworkPreference): SimulatorOption[] {
+  if (framework === "auto") return [SIMULATOR_OPTIONS[0]];
+  return SIMULATOR_OPTIONS.filter(
+    (option) => option.id === "auto" || option.framework === framework,
+  );
+}
+
+function getSimulatorOption(
+  simulator: SimulatorPreference,
+): SimulatorOption | undefined {
+  return SIMULATOR_OPTIONS.find((option) => option.id === simulator);
+}
+
 function convertedFormatId(framework: QuantumFramework): OutputFormatId {
   return `converted:${framework}`;
+}
+
+function normalizeOpenQasmForEditor(openqasm: string): string {
+  if (!openqasm) return "";
+
+  return openqasm
+    .replace(/[αΑ]/g, "alpha")
+    .replace(/[βΒ]/g, "beta")
+    .replace(/[γΓ]/g, "gamma")
+    .replace(/[δΔ]/g, "delta")
+    .replace(/[θΘ]/g, "theta")
+    .replace(/[λΛ]/g, "lambda")
+    .replace(/[μΜ]/g, "mu")
+    .replace(/[πΠ]/g, "pi")
+    .replace(/[φΦ]/g, "phi")
+    .replace(/[ψΨ]/g, "psi")
+    .replace(/[ωΩ]/g, "omega")
+    .replace(/[^\x00-\x7F]/g, "_");
+}
+
+function getEditorCompatibleOpenQasm(openqasm: FinalOpenQasm | null): string {
+  const preferred = normalizeOpenQasmForEditor(openqasm?.editorOpenqasm ?? "");
+  if (isEditorCompatibleOpenQasm(preferred)) return preferred;
+
+  const fallback = normalizeOpenQasmForEditor(openqasm?.openqasm ?? "");
+  if (isEditorCompatibleOpenQasm(fallback)) return fallback;
+
+  return "";
+}
+
+function isEditorCompatibleOpenQasm(openqasm: string): boolean {
+  const trimmed = openqasm.trimStart();
+  if (!trimmed) return false;
+  if (!trimmed.startsWith("OPENQASM 2")) return false;
+
+  return !openqasm.split("\n").some((line) => {
+    const stripped = line.trim();
+    if (!stripped || stripped.startsWith("//")) return false;
+    return stripped.includes("=");
+  });
+}
+
+function createDirectRunCode({
+  selectedFormat,
+  editedCode,
+  liveOpenqasm,
+  liveOpenqasmVersion,
+  targetFramework,
+  simulator,
+}: {
+  selectedFormat: OutputFormatId;
+  editedCode: string;
+  liveOpenqasm: string;
+  liveOpenqasmVersion?: string;
+  targetFramework: QuantumFramework;
+  simulator: SimulatorPreference;
+}): { code: string; source: "source" | "openqasm" | "converted" } {
+  if (selectedFormat === "source") {
+    return { code: editedCode, source: "source" };
+  }
+
+  if (liveOpenqasm) {
+    return {
+      code: createClientFrameworkConversionCode({
+        target: targetFramework,
+        openqasm: liveOpenqasm,
+        openqasmVersion: liveOpenqasmVersion,
+        simulator,
+      }),
+      source: selectedFormat === "openqasm" ? "openqasm" : "converted",
+    };
+  }
+
+  return { code: editedCode, source: "converted" };
 }
 
 function inferOpenQasmVersion(
@@ -1506,14 +2911,36 @@ function createClientFrameworkConversionCode({
   target,
   openqasm,
   openqasmVersion,
+  simulator = "auto",
 }: {
   target: QuantumFramework;
   openqasm: string;
   openqasmVersion?: string;
+  simulator?: SimulatorPreference;
 }) {
   const qasmLiteral = JSON.stringify(openqasm);
   const isQasm3 =
     openqasmVersion === "3.0" || openqasm.trimStart().startsWith("OPENQASM 3");
+  const qiskitMethod =
+    simulator === "qiskit_aer_statevector"
+      ? "method='statevector'"
+      : simulator === "qiskit_aer_density_matrix"
+      ? "method='density_matrix'"
+      : simulator === "qiskit_aer_mps"
+      ? "method='matrix_product_state'"
+      : "";
+  const pennylaneDevice =
+    simulator === "pennylane_default_mixed"
+      ? "default.mixed"
+      : simulator === "pennylane_lightning_qubit"
+      ? "lightning.qubit"
+      : "default.qubit";
+  const cirqSimulator =
+    simulator === "cirq_density_matrix"
+      ? "cirq.DensityMatrixSimulator()"
+      : simulator === "cirq_clifford"
+      ? "cirq.CliffordSimulator()"
+      : "cirq.Simulator()";
 
   if (target === "qiskit") {
     return `
@@ -1524,10 +2951,14 @@ openqasm = ${qasmLiteral}
 
 qc = ${isQasm3 ? "qasm3.loads(openqasm)" : "qasm2.loads(openqasm)"}
 
-simulator = AerSimulator()
+simulator = AerSimulator(${qiskitMethod})
 result = simulator.run(qc, shots=1024).result()
-counts = result.get_counts()
-print({"counts": counts})
+payload = {"simulator": "AerSimulator${qiskitMethod ? `(${qiskitMethod})` : "()"}"}
+try:
+    payload["counts"] = result.get_counts()
+except Exception:
+    payload["result"] = str(result)
+print(payload)
 `.trim();
   }
 
@@ -1549,7 +2980,7 @@ def infer_wires(qasm: str) -> int:
 
 quantum_fn = ${isQasm3 ? "qml.from_qasm3(openqasm)" : "qml.from_qasm(openqasm)"}
 n_wires = infer_wires(openqasm)
-dev = qml.device("default.qubit", wires=n_wires)
+dev = qml.device(${JSON.stringify(pennylaneDevice)}, wires=n_wires)
 
 @qml.qnode(dev)
 def circuit():
@@ -1557,7 +2988,7 @@ def circuit():
     return qml.probs(wires=range(n_wires))
 
 probs = circuit()
-print({"probabilities": probs.tolist(), "wires": n_wires})
+print({"probabilities": probs.tolist(), "wires": n_wires, "simulator": ${JSON.stringify(pennylaneDevice)}})
 `.trim();
   }
 
@@ -1574,9 +3005,9 @@ if openqasm.lstrip().startswith("OPENQASM 3"):
     openqasm = qasm2.dumps(qasm3.loads(openqasm))
 
 circuit = circuit_from_qasm(openqasm)
-simulator = cirq.Simulator()
+simulator = ${cirqSimulator}
 result = simulator.run(circuit, repetitions=1024)
-print({"measurements": {k: v.tolist() for k, v in result.measurements.items()}})
+print({"measurements": {k: v.tolist() for k, v in result.measurements.items()}, "simulator": ${JSON.stringify(cirqSimulator)}})
 `.trim();
 }
 
