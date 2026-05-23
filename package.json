@@ -11,11 +11,15 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.64",
     "@ai-sdk/react": "^3.0.185",
+    "@base-ui/react": "^1.5.0",
+    "@paper-design/shaders-react": "^0.0.76",
     "ai": "^6.0.183",
+    "clsx": "^2.1.1",
     "next": "^16.2.6",
     "quantum-circuit": "^0.9.247",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.6.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

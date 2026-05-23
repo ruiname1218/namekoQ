@@ -5,6 +5,7 @@ import { DefaultChatTransport } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BlochSpherePanel } from "@/components/bloch-sphere";
 import { CircuitEditor } from "@/components/circuit-editor";
+import { LiquidMetalCard } from "@/components/ui/liquid-metal-card";
 
 const chatTransport = new DefaultChatTransport({ api: "/api/chat" });
 
@@ -140,6 +141,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
 
 export function Chat(_props: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [modelTier, setModelTier] = useState<ModelTier>("default");
   const [framework, setFramework] = useState<FrameworkPreference>("auto");
   const [simulator, setSimulator] = useState<SimulatorPreference>("auto");
@@ -175,10 +177,11 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
   }, [simulator, simulatorOptions]);
 
   const submit = (text: string) => {
-    if (!text.trim() || busy) return;
+    const currentText = inputRef.current?.value ?? text;
+    if (!currentText.trim() || busy) return;
     sendMessage(
       {
-        text: withAdvancedSettings(text, {
+        text: withAdvancedSettings(currentText, {
           framework,
           simulator,
           shots,
@@ -191,12 +194,12 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
   };
 
   return (
-    <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 border-t border-[var(--border)] lg:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="border-b border-[var(--border)] bg-white p-5 lg:border-b-0 lg:border-r">
+    <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 items-start border-t border-[var(--border)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <aside className="border-b border-[var(--border)] bg-white p-5 lg:sticky lg:top-4 lg:h-[calc(100vh-88px)] lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            submit(input);
+            submit(inputRef.current?.value ?? input);
           }}
           className="flex h-full flex-col gap-5"
         >
@@ -210,6 +213,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
           <section className="flex flex-1 flex-col">
             <div className="relative flex flex-1">
               <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Describe the quantum computation task..."
@@ -361,8 +365,9 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
           </details>
 
           <button
-            type="submit"
-            disabled={busy || !input.trim()}
+            type="button"
+            onClick={() => submit(inputRef.current?.value ?? input)}
+            disabled={busy}
             className="rounded-sm bg-[var(--ink)] px-5 py-4 text-base font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-35"
           >
             {busy ? "Generating" : "Generate"}
@@ -418,7 +423,12 @@ function MessageView({ message }: { message: UIMessage }) {
     >
       {!isUser && (
         <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase text-[var(--muted)]">
-          <span className="h-2 w-2 rounded-full bg-[var(--ink)]" />
+          <img
+            src="/namekoq-icon.svg"
+            alt=""
+            className="h-5 w-5 rounded-full object-contain"
+            aria-hidden="true"
+          />
           namekoQ
         </div>
       )}
@@ -627,8 +637,8 @@ function AgentProgress({
   const doneCount = activity.filter((step) => step.state === "done").length;
   const hasRun = activity.some((step) => step.state !== "waiting");
 
-  return (
-    <section className="overflow-hidden rounded-sm border border-[var(--border)] bg-white">
+  const content = (
+    <>
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
@@ -674,6 +684,31 @@ function AgentProgress({
           </div>
         ))}
       </div>
+    </>
+  );
+
+  if (busy) {
+    return (
+      <LiquidMetalCard
+        className="rounded-md border border-[var(--border)] p-[1px] shadow-[0_12px_34px_rgba(17,24,39,0.10)]"
+        speed={0.42}
+        repetition={3}
+        softness={0.58}
+        shiftRed={0.16}
+        shiftBlue={0.38}
+        distortion={0.12}
+        scale={7}
+      >
+        <section className="overflow-hidden rounded-[6px] border border-white/70 bg-white/95 backdrop-blur">
+          {content}
+        </section>
+      </LiquidMetalCard>
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-sm border border-[var(--border)] bg-white">
+      {content}
     </section>
   );
 }
@@ -777,7 +812,6 @@ function FinalOutputPanel({
       runSimulator,
     ],
   );
-
   useEffect(() => {
     setSelectedFormat("source");
     setRunFramework(selectedSourceFramework);

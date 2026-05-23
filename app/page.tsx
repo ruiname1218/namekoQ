@@ -23,8 +23,16 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-white px-5 py-4 sm:px-8">
       <header className="flex h-12 items-center justify-between border-b border-[var(--border)] bg-white">
-        <div className="text-sm font-semibold uppercase tracking-[0.35em]">
-          namekoQ
+        <div className="flex items-center gap-3">
+          <img
+            src="/namekoq-icon.svg"
+            alt=""
+            className="h-8 w-8 rounded-full object-contain"
+            aria-hidden="true"
+          />
+          <div className="text-sm font-semibold uppercase tracking-[0.35em]">
+            namekoQ
+          </div>
         </div>
         <div className="hidden text-xs uppercase tracking-[0.22em] text-[var(--muted)] sm:block">
           Quantum
