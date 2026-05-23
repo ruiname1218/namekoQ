@@ -1,11 +1,11 @@
 /**
- * 量子アルゴリズムテンプレート集
- * LLMがコード生成する際の "参照実装" として system prompt に埋め込む。
- * これによりQiskit APIの幻覚(hallucination)を抑制する。
+ * Quantum algorithm templates.
+ * These are embedded in the system prompt as reference implementations for code generation.
+ * They reduce hallucinated framework APIs and provide stable execution patterns.
  */
 
 export const BELL_STATE_TEMPLATE = `
-# Bell State (動作確認用 / Hello Quantum)
+# Bell state smoke test / Hello Quantum
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 
@@ -21,7 +21,7 @@ print({"counts": counts})
 `.trim();
 
 export const H2_VQE_TEMPLATE = `
-# H2分子の基底状態エネルギー (VQE / Hardware-Efficient Ansatz)
+# H2 molecular ground-state energy with VQE / hardware-efficient ansatz
 import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
@@ -29,8 +29,8 @@ from qiskit.quantum_info import SparsePauliOp
 from qiskit_aer.primitives import EstimatorV2 as Estimator
 from scipy.optimize import minimize
 
-# H2 @ bond length 0.735 Å の Jordan-Wigner変換済みハミルトニアン (2 qubit reduction後)
-# 参考: Kandala et al., Nature 549, 242 (2017)
+# H2 at bond length 0.735 Angstrom, Jordan-Wigner transformed Hamiltonian
+# after two-qubit reduction. Reference: Kandala et al., Nature 549, 242 (2017).
 H = SparsePauliOp.from_list([
     ("II", -1.0523732),
     ("IZ",  0.39793742),
@@ -57,8 +57,8 @@ print({"ground_state_energy_Ha": float(res.fun), "params": res.x.tolist()})
 `.trim();
 
 export const PORTFOLIO_QAOA_TEMPLATE = `
-# 組合せ最適化 (QAOA / Markowitz mean-variance)
-# n項目から k 個を選ぶ離散選択問題を量子で解く
+# Combinatorial optimization with QAOA / Markowitz mean-variance objective
+# Solve a discrete selection problem: choose k items from n candidates.
 import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
@@ -67,7 +67,8 @@ from qiskit_aer.primitives import SamplerV2 as Sampler
 from qiskit_aer.primitives import EstimatorV2 as Estimator
 from scipy.optimize import minimize
 
-# 例: 3資産, 期待リターン μ, 共分散 Σ, リスク回避係数 q, 選択数 k=2
+# Example: three assets, expected return mu, covariance sigma,
+# risk-aversion coefficient q, and cardinality k=2.
 mu = np.array([0.10, 0.20, 0.15])
 sigma = np.array([
     [0.10, 0.02, 0.04],
@@ -76,15 +77,15 @@ sigma = np.array([
 ])
 q = 0.5; k = 2; n = len(mu); penalty = 1.0
 
-# QUBO -> Ising への変換は省略簡略版: 各資産を1qubitに割当
-# H_cost = -μ·x + q·xᵀΣx + penalty·(Σx - k)²
+# Simplified QUBO-to-Ising mapping: assign one qubit to each asset.
+# H_cost = -mu dot x + q * x^T sigma x + penalty * (sum(x) - k)^2
 def build_hamiltonian():
     ops = []
-    # 線形項 + ペナルティ
+    # Linear terms plus cardinality penalty.
     for i in range(n):
         coef = -0.5*mu[i] + q*sigma[i, i]*0.5 + penalty*(1 - 2*k)*0.5
         ops.append(("I"*(n-1-i) + "Z" + "I"*i, coef))
-    # 二次項
+    # Quadratic terms.
     for i in range(n):
         for j in range(i+1, n):
             coef = q*sigma[i, j]*0.5 + penalty*0.5
@@ -101,7 +102,7 @@ qc = QuantumCircuit(n)
 for q_ in range(n): qc.h(q_)
 for layer in range(p):
     for op, coef in H.to_list():
-        # 簡略: ZZ/Z項のみ展開
+        # Simplified expansion for Z and ZZ terms.
         zs = [i for i, c in enumerate(reversed(op)) if c == "Z"]
         if len(zs) == 1:
             qc.rz(2*coef.real*gamma[layer], zs[0])
@@ -120,7 +121,7 @@ def cost(params):
 x0 = np.random.uniform(0, np.pi, size=2*p)
 res = minimize(cost, x0, method="COBYLA", options={"maxiter": 80})
 
-# サンプリングして最頻ビット列を解とする
+# Sample the optimized circuit and use the most frequent bitstring as the solution.
 qc_measure = qc.copy(); qc_measure.measure_all()
 sampler = Sampler()
 sample = sampler.run([(qc_measure, [*res.x[:p], *res.x[p:]])], shots=2048).result()
@@ -132,21 +133,21 @@ print({"selected_assets": selection, "expectation": float(res.fun), "counts_top"
 
 export const TEMPLATES = {
   bell_state: {
-    label: "Bell状態 (動作確認)",
+    label: "Bell State Smoke Test",
     domain: "general",
-    description: "もつれ状態の最小例。Qiskitが動くかの確認用。",
+    description: "Minimal entangled-state example for checking that Qiskit execution works.",
     code: BELL_STATE_TEMPLATE,
   },
   h2_vqe: {
-    label: "H2分子 VQE",
+    label: "H2 Molecule VQE",
     domain: "chemistry",
-    description: "水素分子の基底状態エネルギー計算。化学ドメインの代表例。",
+    description: "Ground-state energy calculation for molecular hydrogen, a standard chemistry example.",
     code: H2_VQE_TEMPLATE,
   },
   portfolio_qaoa: {
-    label: "ポートフォリオ QAOA",
+    label: "Portfolio QAOA",
     domain: "finance",
-    description: "n資産からk個選ぶ離散最適化。金融ドメインの代表例。",
+    description: "Discrete optimization for selecting k assets from n candidates, a finance-domain example.",
     code: PORTFOLIO_QAOA_TEMPLATE,
   },
 } as const;

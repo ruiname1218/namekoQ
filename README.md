@@ -1,34 +1,34 @@
-# namekoQ — 量子アプリケーション生成AIエージェント
+# namekoQ
 
-ドメイン専門家(化学・金融など)向けに、自然言語の要望から **量子計算コード生成 → シミュレータ実行 → ドメイン用語での解釈** までを行うエージェントのPoC。
+namekoQ is a proof-of-concept AI agent for quantum application generation. It turns a natural-language request into a structured quantum-computing plan, generates executable code, runs a local simulator, checks intent alignment, and returns a researcher-oriented analysis report.
 
-## アーキテクチャ
+The current branch, `English_version`, keeps the product UI, prompts, generated report structure, tool labels, examples, and README in English.
 
+## Architecture
+
+```text
+[User request]
+       |
+[Next.js App Router UI]
+       |
+[/api/chat: AI SDK v6 streamText + tool calling]
+       |
+[Planning -> code generation -> simulation -> verification]
+       |
+[Python subprocess: Qiskit / PennyLane / Cirq]
+       |
+[Final code, OpenQASM 2 artifacts, simulation results, analysis report]
 ```
-[ユーザー: "H2のエネルギー計算したい"]
-       ↓
-[Next.js Chat UI] (App Router + @ai-sdk/react)
-       ↓
-[/api/chat] (AI SDK v6 streamText + Tool Calling)
-       ↓
-[OpenAI (@ai-sdk/openai)]
-       ↓ tool call
-[simulate_*] → Python3 subprocess → Qiskit / PennyLane / Cirq simulator
-       ↓
-[結果をドメイン用語に翻訳して返す]
-```
 
-## セットアップ
+## Setup
 
-### 1. Node依存をインストール
+Install Node dependencies:
 
 ```bash
 npm install
 ```
 
-### 2. Python + 量子計算フレームワークを入れる
-
-Qiskit / PennyLane / Cirq のローカルシミュレータを動かすため Python 3.10+ が必要です。
+Install the local Python simulation stack. Python 3.10 or newer is recommended.
 
 ```bash
 python3 -m venv .venv
@@ -36,172 +36,80 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`.venv` を使う場合は `.env.local` の `PYTHON_BIN` を venv の python に向けてください。
+If you use a virtual environment, point `PYTHON_BIN` at that interpreter in `.env.local`.
 
 ```bash
 PYTHON_BIN=/path/to/namekoQ/.venv/bin/python
 ```
 
-### 3. OpenAI API キーを設定
-
-[OpenAI Platform](https://platform.openai.com/api-keys) でキーを発行し `.env.local` に記入:
+Configure model keys:
 
 ```bash
+DEEPSEEK_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
-NAMEKOQ_MODEL=gpt-5.5   # 必要に応じてgpt-5やgpt-4oに変更
+
+# optional
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+NAMEKOQ_DEEPSEEK_MODEL=deepseek-v4-pro
+NAMEKOQ_MODEL=gpt-5.5
 ```
 
-Vercelにデプロイする場合は CLI で同期できます:
-
-```bash
-vercel link
-vercel env add OPENAI_API_KEY
-vercel env pull .env.local
-```
-
-### 4. 起動
+Run the app:
 
 ```bash
 npm run dev
-# → http://localhost:3000
 ```
 
-## 使い方の例
+Open `http://localhost:3000`.
 
-UIに以下を投げると、エージェントがコード生成 → 実行 → 解釈まで自動でやります:
+## Example Requests
 
-- **化学**: 「H2分子の基底状態エネルギーをVQEで計算して。bond lengthは0.735 Å」
-- **化学**: 「VQEで H2 の bond length を 0.5〜2.0 Å の間で振って、最安定点を見つけて」
-- **金融**: 「3資産のうち2つを選ぶポートフォリオ最適化をQAOAで解いて」
-- **動作確認**: 「Bell状態を作って測定してみて」
+- Chemistry: `Compute the H2 molecule ground-state energy with VQE at bond length 0.735 Angstrom.`
+- Chemistry scan: `Run a VQE bond-length scan for H2 from 0.5 to 2.0 Angstrom and find the most stable point.`
+- Finance: `Solve a portfolio optimization problem with QAOA. Choose 2 assets from 3 assets with expected returns [0.10, 0.20, 0.15], covariance [[0.10,0.02,0.04],[0.02,0.15,0.06],[0.04,0.06,0.12]], risk aversion 0.5, and shots 2048. Return selected assets, top bitstrings, and objective values.`
+- Smoke test: `Create and measure a Bell state.`
 
-## 構成ファイル
+## Main Features
 
-| パス | 役割 |
-|------|------|
-| `app/page.tsx` | エントリ。例文ボタン+Chatを並べる |
-| `components/chat.tsx` | `useChat` + `DefaultChatTransport` のチャットUI |
-| `app/api/chat/route.ts` | `streamText` + plan/simulate/verify ツール定義 |
-| `lib/system-prompt.ts` | ドメイン専門家向け振る舞いの指示 |
-| `lib/quantum-templates.ts` | VQE/QAOA/Bell の参照Qiskit実装 |
-| `lib/run-qiskit.ts` | Python subprocess 実行 (タイムアウト/サイズ制限あり) |
+- Structured planning with domain, framework, algorithm, parameters, qubit estimate, runtime estimate, success criteria, and expected output keys.
+- Code generation for Qiskit, PennyLane, or Cirq.
+- Local simulation through a Python subprocess with Qiskit Aer, PennyLane, and Cirq-compatible execution paths.
+- Direct re-simulation of edited final code or wrapper code generated from edited OpenQASM.
+- OpenQASM 2-first final circuit artifacts for broad compatibility with the browser circuit editor.
+- Circuit editor support for common gates, parameters, measurement mapping, import/export, undo/redo, and validation.
+- Bloch-sphere preview for the pre-measurement circuit state when it can be inferred locally.
+- Research-style analysis report with Markdown and JSON export.
+- App Builder that turns the final circuit, results, and algorithm intent into a practical single-file HTML app.
+- DeepSeek fallback behavior for critic validation when structured response formats are unavailable.
 
-## リポジトリ分析
+## Important Files
 
-### 何を作っているか
+| Path | Role |
+| --- | --- |
+| `app/page.tsx` | App entry and example request definitions |
+| `components/chat.tsx` | Main chat, settings, final output, report, simulator, and app builder UI |
+| `components/circuit-editor.tsx` | OpenQASM-compatible circuit editor |
+| `components/bloch-sphere.tsx` | Bloch-sphere preview component |
+| `app/api/chat/route.ts` | Main AI agent route, tool definitions, simulation tools, verification, and OpenQASM extraction |
+| `app/api/simulate/route.ts` | Direct simulation endpoint for edited code |
+| `app/api/app-builder/route.ts` | HTML app generation endpoint |
+| `lib/system-prompt.ts` | Main agent instructions |
+| `lib/critic-prompt.ts` | Intent-alignment critic instructions |
+| `lib/plan-schema.ts` | Structured planning schema |
+| `lib/quantum-templates.ts` | Reference Qiskit implementations embedded into the prompt |
+| `lib/run-qiskit.ts` | Python subprocess runner with timeout and output limits |
 
-このリポジトリは、量子計算の専門家ではないユーザーが自然言語で目的を入力し、LLM が実行計画を立て、Python の量子計算コードを生成し、ローカルシミュレータで実行して結果を説明するための PoC です。
+## Current Scope
 
-実装上の中心は、単なるチャットUIではなく、以下の **計画 → 実行 → 検証** の3段階ワークフローです。
+namekoQ is not a full quantum platform. It is a focused research prototype for natural-language-driven quantum workflow generation. It is strongest for small simulations, educational experiments, early algorithm prototyping, and structured report generation.
 
-1. `request_plan`
-   - ユーザー要望を `PlanSchema` に従う構造化計画へ変換する
-   - framework、アルゴリズム、qubit数、パラメータ、成功条件、期待出力キーを明示する
-2. `simulate_qiskit` / `simulate_pennylane` / `simulate_cirq`
-   - 選択された framework 向けの Python コードを生成し、ローカルの Python subprocess で実行する
-   - stdout の末尾に出た dict 風出力を JSON として抽出する
-3. `verify_intent_alignment`
-   - 別の critic LLM が、ユーザー要望・計画・コード・結果の整合性をレビューする
-   - `aligned=false` の場合は修正して再実行する前提の設計になっている
-4. `convert_to_openqasm`
-   - 検証済み最終コードとは別に、LLM が OpenQASM 抽出専用コードを整形する
-   - OpenQASM 自体は LLM ではなく Qiskit / Cirq / PennyLane の API で機械的に出力する
-   - OpenQASM から、元の framework 以外の Qiskit / PennyLane / Cirq 実行用 wrapper code も機械的に生成する
-   - 変換都合でメインの量子計算コードを単純化しないための後段ステップ
+The current local execution model runs generated Python on the host machine. Before production or multi-user deployment, execution should be moved to an isolated sandbox with strict import, filesystem, network, timeout, and resource controls.
 
-### 現在の実装範囲
+The included H2 and portfolio examples are intentionally compact reference implementations. Production-grade chemistry workflows should integrate molecular Hamiltonian generation through libraries such as PySCF or qiskit-nature. Production-grade optimization workflows should use a more rigorous QUBO or Ising conversion layer, constraint handling, and benchmark tests.
 
-- Frontend
-  - Next.js App Router + React 19 + Tailwind CSS
-  - 左ペインにリクエスト入力、Advanced 内に framework / shots / max iterations の追加設定
-  - framework が Auto の場合は、LLM が問題に合う framework を選ぶ
-  - 右ペインにチャット、ツール実行状況、計画、生成コード、実行結果、検証結果を表示
-  - 実行完了後に `Final Output` として、最終コード、OpenQASM、OpenQASM 由来の別 framework 用 wrapper code を select で切り替えて編集・コピー可能な形で表示
-  - OpenQASM 2.0 compatible な `quantum-circuit` ベースの回路エディターを表示し、gate の追加・移動・削除をドラッグ&ドロップで行える
-  - 回路エディターでは RX/RY/RZ の角度、measure の classical bit、CX/CZ/SWAP の wire 割り当てを編集できる
-  - OpenQASM ファイルの import/export、回路編集履歴の undo/redo、OpenQASM validation 表示に対応する
-  - 回路エディターで編集した OpenQASM から、Qiskit / PennyLane / Cirq 用 wrapper code をブラウザ側で即時再生成する
-  - 測定 counts は簡易バー表示される
+## Development Notes
 
-- Backend
-  - `/api/chat` が AI SDK v6 の `streamText` と tool calling を使う
-  - モデルは `NAMEKOQ_MODEL`、critic は `NAMEKOQ_CRITIC_MODEL` で変更可能
-  - デフォルトモデルは `gpt-5.5`
-  - 最大10 step まで tool call を継続する
-
-- Quantum execution
-  - `requirements.txt` では Qiskit / qiskit-aer / PennyLane / Cirq Core / NumPy / SciPy を要求する
-  - 実行はローカル Python subprocess
-  - タイムアウトは60秒
-  - stdout / stderr は最大64KBまで保持
-  - 一時ディレクトリを作成してコードを書き込み、実行後に削除する
-
-- Prompting
-  - `SYSTEM_PROMPT` に Qiskit の Bell / H2 VQE / Portfolio QAOA 参照実装を埋め込んでいる
-  - framework の取り違え、古い Qiskit API、存在しない API の生成を抑制しようとしている
-  - `CRITIC_PROMPT` は「動いたか」ではなく「要望に合っているか」を見る設計
-
-### 強み
-
-- LLM に直接コードを書かせるだけでなく、`PlanSchema` で一度コミットメントポイントを作っている
-- 実行後に critic LLM を挟むため、パラメータ取り違えや出力不足を検出しやすい
-- Qiskit だけでなく PennyLane / Cirq も UI と tool 名としては選択できる
-- 結果表示がドメインユーザー向けで、raw stdout だけでなく metrics / counts / 検証結果を見せる
-- H2 VQE、Portfolio QAOA、Bell 状態という PoC の代表例が明確
-
-### 制約・リスク
-
-- 現在の Python 実行は安全なサンドボックスではなく、ローカル subprocess で任意 Python を実行する設計
-  - 本番化するなら Vercel Sandbox、コンテナ、seccomp、ネットワーク遮断、ファイルシステム制限などが必要
-- `simulate_pennylane` / `simulate_cirq` も内部的には `runQiskit` という汎用 Python 実行関数を使っている
-  - 動作上は問題ないが、命名は実態とずれている
-- `PlanSchema.expected_runtime_sec` は最大120秒だが、実行タイムアウトは60秒
-  - LLM が120秒までの計画を立てられる一方、実行側は60秒で kill される
-- README では `app/page.tsx` を「例文ボタン+Chat」と説明しているが、現在の `Chat` コンポーネントは `examples` props を受け取るだけで UI に表示していない
-- 生成コード編集用 textarea と回路エディターは最終表示・コピー用の下書きで、編集後の再実行にはまだ接続されていない
-  - 回路編集後の OpenQASM と wrapper code は更新されるが、Python simulator の再実行はまだ行わない
-- H2 VQE テンプレートは 0.735 Å の係数を直接持つ PoC 実装
-  - 任意 bond length の本格的な分子ハミルトニアン生成には PySCF / qiskit-nature 等の導入が必要
-- QAOA テンプレートは簡略版で、一般的な QUBO / Ising 変換や制約処理の厳密性は限定的
-- 自動テスト、E2E、型チェック/CI が README 上も package scripts 上も未整備
-
-### Qniverse との位置づけ
-
-Qniverse は、量子回路ビルダー、複数SDK、HPC/GPU/FPGA/QPU バックエンド、教材やアルゴリズム集まで含む統合プラットフォームです。一方、このリポジトリはそこまでの統合環境ではなく、**自然言語から量子コードを生成し、ローカルシミュレーションして説明する AI エージェント PoC** です。
-
-近い方向性はありますが、現状の namekoQ は Qniverse の代替ではなく、Qniverse 的な体験のうち「自然言語インターフェース」「コード生成」「ローカル実行」「結果解釈」に絞った小さな実験実装と見るのが正確です。
-
-### 改善優先度
-
-1. 実行安全性を上げる
-   - ローカル subprocess から隔離サンドボックスへ移す
-   - 実行可能 import / ファイルアクセス / ネットワークを制限する
-2. framework 実行層を整理する
-   - `runQiskit` を `runPythonSimulation` などに改名する
-   - framework ごとの依存チェックとエラー説明を分ける
-3. UI の未接続機能を接続する
-   - 生成コード編集後の再実行
-   - 回路エディターで更新した OpenQASM からの再実行
-   - `examples` props の表示
-4. 量子テンプレートを拡充する
-   - Qiskit / PennyLane / Cirq それぞれに同等テンプレートを持たせる
-   - H2 以外の分子、Grover、QFT、QPE、Amplitude Estimation を追加する
-5. 検証を自動化する
-   - Bell 状態、H2 VQE、簡易 QAOA のスモークテスト
-   - API route の tool call 回帰テスト
-   - 生成結果 JSON の schema validation
-
-## 今後の拡張 (PoCの先)
-
-1. **Vercel Sandbox 化**: ローカルPython依存を外し、`@vercel/sandbox` でクラウド実行に切替
-2. **実機ジョブ**: IBM Quantumへの投入 + ジョブ完了通知 (Vercel Workflow DevKitでdurable化)
-3. **RAG**: Qiskit公式docs + 量子アルゴリズム論文のベクタDB
-4. **検証ループ強化**: 期待値の物理的妥当性チェック (例: H2エネルギー > -1.5 Ha)
-5. **PES計算など反復タスク**: パラメトリックスキャン用のオーケストレーション
-
-## 参考にしたもの
-
-- Qiskit Code Assistant (IBM, 2024 / arXiv:2405.19495) — Qiskit専用LLMのFTとベンチマーク
-- Classiq — 高レベル仕様 → 自動回路合成
-- Kandala et al., Nature 549, 242 (2017) — Hardware-Efficient VQE for H2
-- Vercel AI SDK v6 + AI Gateway の Tool Calling パターン
+- `npm run build` validates the Next.js application.
+- Python simulation requires packages from `requirements.txt`.
+- Final agent answers are expected to include practical interpretation, assumptions, limitations, and next steps, not only raw simulator output.
+- OpenQASM artifacts should prefer OpenQASM 2 unless a downstream tool explicitly supports OpenQASM 3.

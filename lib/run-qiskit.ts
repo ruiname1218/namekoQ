@@ -15,10 +15,11 @@ const MAX_OUTPUT_BYTES = 64 * 1024;
 const TIMEOUT_MS = 60_000;
 
 /**
- * Pythonインタプリタを子プロセスで起動し、渡されたQiskitコードを実行する。
- * stdoutの最後のJSON-likeな行をparseして parsed に格納する。
+ * Runs the supplied Python quantum code in a child Python interpreter.
+ * The last JSON-like line in stdout is parsed into `parsed` when possible.
  *
- * 注: PoCではホストのPythonを直接呼ぶ。本番ではVercel Sandboxに置換する。
+ * Note: this PoC directly calls the host Python runtime. Production usage should
+ * replace this with an isolated sandbox such as Vercel Sandbox or a container.
  */
 export async function runQiskit(code: string): Promise<RunResult> {
   const started = Date.now();
@@ -99,8 +100,8 @@ export async function runQiskit(code: string): Promise<RunResult> {
 }
 
 /**
- * stdoutの最後の行に出力されたJSON-likeなdictをパースする。
- * Pythonの dict は シングルクォートを使うので、JSON互換に正規化を試みる。
+ * Parses a JSON-like dict printed near the end of stdout.
+ * Python dicts often use single quotes, so this attempts a light JSON normalization.
  */
 function extractJsonTail(stdout: string): unknown {
   const lines = stdout.trim().split("\n");
@@ -110,7 +111,7 @@ function extractJsonTail(stdout: string): unknown {
     try {
       return JSON.parse(line);
     } catch {
-      // Python dict ('foo': 1) → JSON ("foo": 1) を雑に試す
+      // Try a light conversion from Python dict syntax ('foo': 1) to JSON.
       const normalized = line
         .replace(/'/g, '"')
         .replace(/\bTrue\b/g, "true")

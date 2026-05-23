@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "namekoQ - Quantum Application Agent",
-  description: "ドメイン専門家向けの量子アプリケーション生成AIエージェント",
+  description: "A quantum application generation AI agent for domain experts",
 };
 
 export default function RootLayout({

@@ -30,9 +30,24 @@ declare module "quantum-circuit" {
       options?: GateOptions,
     ): string;
     removeGate(id: string): void;
+    removeMeasurementAndClassicalControl(): void;
     insertColumn(colIndex?: number): void;
     appendQubits(numQubits: number): void;
     numCols(): number;
+    run(
+      initialValues?: number[] | null,
+      options?: Record<string, unknown>,
+    ): void;
+    angles(): Array<{
+      theta: number;
+      phi: number;
+      thetaDeg: number;
+      phiDeg: number;
+      radius: number;
+      x: number;
+      y: number;
+      z: number;
+    }>;
   }
 }
 

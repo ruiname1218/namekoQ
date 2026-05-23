@@ -2,20 +2,20 @@ import { Chat } from "@/components/chat";
 
 const EXAMPLES = [
   {
-    domain: "化学",
-    text: "H2分子の基底状態エネルギーをVQEで計算して。bond lengthは0.735 Å。",
+    domain: "Chemistry",
+    text: "Compute the ground-state energy of the H2 molecule with VQE. Use a bond length of 0.735 Å.",
   },
   {
-    domain: "化学",
-    text: "VQEで H2 の bond length を 0.5〜2.0 Å の間で振って、最安定点を見つけて。",
+    domain: "Chemistry",
+    text: "Run a VQE bond-length scan for H2 from 0.5 to 2.0 Å and identify the most stable point.",
   },
   {
-    domain: "金融",
-    text: "3資産のうち2つを選ぶポートフォリオ最適化をQAOAで解いて。",
+    domain: "Finance",
+    text: "Solve a portfolio optimization problem with QAOA: choose 2 assets out of 3.",
   },
   {
-    domain: "動作確認",
-    text: "Bell状態を作って測定してみて。",
+    domain: "Smoke test",
+    text: "Create a Bell state and measure it.",
   },
 ];
 
