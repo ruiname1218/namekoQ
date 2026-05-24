@@ -171,10 +171,10 @@ export function CircuitEditor({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div>
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            Circuit Editor
+            回路エディター
           </div>
           <div className="mt-1 text-xs text-[var(--muted)]">
-            OpenQASM 2.0 compatible circuit editor
+            OpenQASM 2.0互換の回路エディター
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -183,14 +183,14 @@ export function CircuitEditor({
             onClick={addColumn}
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
           >
-            Add column
+            列を追加
           </button>
           <button
             type="button"
             onClick={addQubit}
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
           >
-            Add qubit
+            qubitを追加
           </button>
         </div>
       </div>
@@ -198,7 +198,7 @@ export function CircuitEditor({
       <div className="grid gap-4 p-4 lg:grid-cols-[160px_minmax(0,1fr)]">
         <aside>
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-            Gates
+            ゲート
           </div>
           <div className="grid grid-cols-3 gap-2 lg:grid-cols-2">
             {PALETTE.map((gate) => (
@@ -222,7 +222,7 @@ export function CircuitEditor({
           {selectedGate && (
             <div className="mt-4 rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                Selected
+                選択中
               </div>
               <div className="mt-2 font-mono text-sm uppercase">
                 {selectedGate.name}
@@ -289,7 +289,7 @@ export function CircuitEditor({
                 {selectedGate.name === "measure" && (
                   <label className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                      classical bit
+                      古典bit
                     </span>
                     <input
                       type="number"
@@ -316,7 +316,7 @@ export function CircuitEditor({
                 onClick={() => removeGate(selectedGate.id)}
                 className="mt-3 w-full rounded-sm border border-[var(--ink)] px-2 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white"
               >
-                Delete
+                削除
               </button>
             </div>
           )}
@@ -331,10 +331,10 @@ export function CircuitEditor({
           {model.errors.length === 0 && (
             <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
               <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-1">
-                Valid OpenQASM
+                有効なOpenQASM
               </span>
-              <span>{model.qubits} qubits</span>
-              <span>{model.gates.length} gates</span>
+              <span>{model.qubits} qubit</span>
+              <span>{model.gates.length} gate</span>
             </div>
           )}
 

@@ -52,10 +52,10 @@ export function BlochSpherePanel({ openqasm }: { openqasm: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div>
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            Bloch Sphere
+            Bloch球
           </div>
           <div className="mt-1 text-xs text-[var(--muted)]">
-            Pre-measurement single-qubit state
+            測定前の単一qubit状態
           </div>
         </div>
         {selectedVector && (
@@ -287,13 +287,13 @@ function analyzeBloch(openqasm: string): BlochAnalysis {
   const source = openqasm.trim();
 
   if (!source) {
-    return { vectors: [], errors: ["OpenQASM is empty."], warnings };
+    return { vectors: [], errors: ["OpenQASMが空です。"], warnings };
   }
 
   if (source.startsWith("OPENQASM 3")) {
     return {
       vectors: [],
-      errors: ["Bloch sphere currently uses OpenQASM 2.0 input."],
+      errors: ["Bloch球表示は現在OpenQASM 2.0入力に対応しています。"],
       warnings,
     };
   }
@@ -316,7 +316,7 @@ function analyzeBloch(openqasm: string): BlochAnalysis {
     }
 
     if (hasMeasurement(parsed)) {
-      warnings.push("Measurement gates are ignored for this visualization.");
+      warnings.push("この可視化ではmeasure gateを無視します。");
     }
 
     const simulation = new QuantumCircuit(1);

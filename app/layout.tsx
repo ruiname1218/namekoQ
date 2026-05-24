@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "namekoQ - Quantum Application Agent",
+  title: "namekoQ - 量子アプリケーション生成エージェント",
   description: "ドメイン専門家向けの量子アプリケーション生成AIエージェント",
 };
 

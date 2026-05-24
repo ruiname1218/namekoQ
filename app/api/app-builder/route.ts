@@ -31,17 +31,17 @@ export async function POST(req: Request) {
       const generated = await generateAppJson({
         model,
         system: [
-          "You are a product-minded quantum application builder.",
-          "Create a practical single-file HTML app that uses the purpose and results of a quantum algorithm.",
-          "Do not merely embed or display the circuit. The app must expose an interaction tied to the algorithm's domain.",
-          "The app must be self-contained: inline CSS and JavaScript only, no external network dependencies.",
-          "The app must include the OpenQASM and source code as inspectable artifacts, but its primary screen must be a useful workflow.",
-          "Prefer restrained, professional UI. Avoid marketing copy.",
-          "Return complete HTML including <!doctype html>, <html>, <head>, and <body>.",
-          "Return only valid JSON with keys: title, concept, html, usageNotes.",
+          "あなたはプロダクト視点を持つ量子アプリケーションビルダーです。",
+          "量子アルゴリズムの目的と結果を使った、実用的な単一HTMLアプリを作成してください。",
+          "単に回路を埋め込んだり表示するだけではなく、アルゴリズムのドメインに紐づく操作を提供してください。",
+          "アプリは自己完結型にしてください。CSSとJavaScriptはinlineのみ、外部ネットワーク依存は禁止です。",
+          "OpenQASMとソースコードは確認可能な成果物として含めてください。ただし主画面は実用的なワークフローを優先してください。",
+          "落ち着いた業務向けUIを優先し、マーケティング文言は避けてください。",
+          "必ず <!doctype html>, <html>, <head>, <body> を含む完全なHTMLを返してください。",
+          "title, concept, html, usageNotes のキーを持つ有効なJSONのみを返してください。文言は日本語にしてください。",
         ].join("\n"),
         prompt: [
-          "## Analysis report JSON",
+          "## 分析レポートJSON",
           JSON.stringify(body.report ?? null, null, 2).slice(0, 14000),
           "",
           "## OpenQASM",
@@ -49,21 +49,21 @@ export async function POST(req: Request) {
           body.openqasm.slice(0, 12000),
           "```",
           "",
-          "## Source code",
+          "## ソースコード",
           "```python",
           (body.sourceCode ?? "").slice(0, 12000),
           "```",
           "",
-          "## User customization",
-          body.customization?.trim() || "No extra customization.",
+          "## ユーザーのカスタム指示",
+          body.customization?.trim() || "追加のカスタム指示なし。",
           "",
-          "Build an app that makes this algorithm useful. Examples:",
-          "- QAOA portfolio: interactive portfolio decision dashboard with objective rescoring and selected asset explanation.",
-          "- MaxCut/QAOA: graph cut explorer with bitstring scoring.",
-          "- VQE chemistry: molecule energy report/explorer with parameters and limitations.",
-          "- Grover: marked-state search demonstrator with success probability.",
-          "- QPE: phase-estimation calculator/explainer.",
-          "- Bell/GHZ: entanglement measurement explorer.",
+          "このアルゴリズムを実用的に使えるアプリを作ってください。例:",
+          "- QAOA portfolio: 目的関数の再評価と選択資産の説明を含むポートフォリオ意思決定ダッシュボード。",
+          "- MaxCut/QAOA: bitstringスコアを確認できるグラフカット探索アプリ。",
+          "- VQE chemistry: パラメータと制約を含む分子エネルギーレポート/探索アプリ。",
+          "- Grover: marked-stateと成功確率を確認する探索デモ。",
+          "- QPE: 位相推定の計算/説明アプリ。",
+          "- Bell/GHZ: エンタングルメント測定結果ビューア。",
         ].join("\n"),
       });
 
@@ -105,14 +105,14 @@ async function generateAppJson({
     prompt: [
       prompt,
       "",
-      "Return only one valid JSON object in this shape:",
+      "次の形の有効なJSONオブジェクトを1つだけ返してください:",
       JSON.stringify({
         title: "string",
         concept: "string",
-        html: "complete single-file HTML string",
+        html: "完全な単一HTML文字列",
         usageNotes: ["string"],
       }),
-      "Do not wrap the JSON in markdown fences.",
+      "JSONをmarkdown fenceで囲まないでください。",
     ].join("\n"),
   });
   return GeneratedAppSchema.parse(extractJsonObject(text));
@@ -133,7 +133,7 @@ function extractJsonObject(text: string): unknown {
     if (start >= 0 && end > start) {
       return JSON.parse(trimmed.slice(start, end + 1));
     }
-    throw new Error("Model did not return a parseable JSON object.");
+    throw new Error("モデルがparse可能なJSONオブジェクトを返しませんでした。");
   }
 }
 
@@ -182,7 +182,7 @@ function createFallbackApp(body: z.infer<typeof AppBuilderRequestSchema>) {
   const simulation = isRecord(report.simulation) ? report.simulation : {};
   const result = isRecord(simulation.parsed) ? simulation.parsed : {};
   const algorithm = String(plan.algorithm ?? "Quantum");
-  const title = `${algorithm} Decision App`;
+  const title = `${algorithm} 意思決定アプリ`;
   const concept = fallbackConcept(algorithm);
   const html = buildFallbackHtml({
     title,
@@ -199,30 +199,30 @@ function createFallbackApp(body: z.infer<typeof AppBuilderRequestSchema>) {
     concept,
     html,
     usageNotes: [
-      "This is a self-contained prototype generated from the final quantum run.",
-      "It uses the quantum result as a decision artifact; it does not run a quantum simulator in the browser.",
-      "Review the embedded assumptions before using it for real decisions.",
+      "これは最終量子実行から生成された自己完結型プロトタイプです。",
+      "量子結果を意思決定の成果物として使います。ブラウザ内で量子シミュレータは実行しません。",
+      "実際の意思決定に使う前に、埋め込まれた前提を確認してください。",
     ],
   };
 }
 
 function fallbackConcept(algorithm: string) {
   if (/qaoa/i.test(algorithm)) {
-    return "An interactive decision dashboard that lets users inspect candidate bitstrings, compare the quantum-selected option, and review the objective value.";
+    return "候補bitstring、量子計算で選ばれた選択肢、目的関数値を確認できる対話型意思決定ダッシュボード。";
   }
   if (/vqe/i.test(algorithm)) {
-    return "A compact experiment report for inspecting the estimated energy, variational parameters, and modeling limitations.";
+    return "推定エネルギー、変分パラメータ、モデル制約を確認する小さな実験レポート。";
   }
   if (/grover/i.test(algorithm)) {
-    return "A search-result explorer that highlights the marked state and observed success distribution.";
+    return "marked stateと観測された成功分布を強調する探索結果ビューア。";
   }
   if (/qpe|phase/i.test(algorithm)) {
-    return "A phase-estimation result explorer for comparing measured phase candidates against the target interpretation.";
+    return "測定位相候補とターゲット解釈を比較する位相推定結果ビューア。";
   }
   if (/bell|ghz/i.test(algorithm)) {
-    return "An entanglement measurement explorer showing correlated outcomes and circuit artifacts.";
+    return "相関した測定結果と回路成果物を表示するエンタングルメント測定ビューア。";
   }
-  return "A compact quantum-result explorer with interactive result inspection and embedded reproducibility artifacts.";
+  return "対話的な結果確認と再現用成果物を含む小さな量子結果ビューア。";
 }
 
 function buildFallbackHtml({
@@ -285,22 +285,22 @@ function buildFallbackHtml({
         <h1>${escapeHtml(title)}</h1>
         <p>${escapeHtml(concept)}</p>
       </div>
-      <button onclick="copySummary()">Copy Summary</button>
+      <button onclick="copySummary()">サマリーをコピー</button>
     </header>
     <section class="grid">
       <div class="panel">
-        <h2>Decision View</h2>
+        <h2>意思決定ビュー</h2>
         <div id="decision"></div>
       </div>
       <aside class="panel">
-        <h2>Key Results</h2>
+        <h2>主要結果</h2>
         <div id="metrics" class="metric-grid"></div>
       </aside>
     </section>
     <section class="panel" style="margin-top:18px">
-      <h2>Artifacts</h2>
+      <h2>成果物</h2>
       <button class="secondary" onclick="showArtifact('qasm')">OpenQASM</button>
-      <button class="secondary" onclick="showArtifact('source')">Source Code</button>
+      <button class="secondary" onclick="showArtifact('source')">ソースコード</button>
       <pre id="artifact"></pre>
     </section>
   </main>
@@ -318,17 +318,17 @@ function buildFallbackHtml({
       const entries = Object.entries(result).filter(([key]) => !/counts/i.test(key)).slice(0, 8);
       document.getElementById('metrics').innerHTML = entries.length
         ? entries.map(([key, value]) => '<div class="metric"><span>' + key + '</span><strong>' + fmt(value) + '</strong></div>').join('')
-        : '<p>No scalar result fields were available.</p>';
+        : '<p>利用可能なスカラー結果フィールドはありません。</p>';
     }
     function renderDecision() {
       const counts = result.counts_top || result.counts || result.measurement_counts || {};
       const rows = Object.entries(counts).slice(0, 12);
       const selected = result.selected_assets || result.best_solution || result.best_bitstring || result.selection || null;
       document.getElementById('decision').innerHTML =
-        '<p><strong>Recommended output:</strong> ' + fmt(selected) + '</p>' +
-        (rows.length ? '<table><thead><tr><th>Candidate</th><th>Count / score</th></tr></thead><tbody>' +
+        '<p><strong>推奨出力:</strong> ' + fmt(selected) + '</p>' +
+        (rows.length ? '<table><thead><tr><th>候補</th><th>Count / score</th></tr></thead><tbody>' +
         rows.map(([state, value]) => '<tr><td><code>' + state + '</code></td><td>' + fmt(value) + '</td></tr>').join('') +
-        '</tbody></table>' : '<p>No distribution was available. Inspect the embedded artifacts.</p>');
+        '</tbody></table>' : '<p>分布は利用できません。埋め込み成果物を確認してください。</p>');
     }
     function showArtifact(kind) {
       document.getElementById('artifact').textContent = kind === 'qasm' ? data.openqasm : data.sourceCode;

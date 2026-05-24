@@ -54,14 +54,14 @@ const QUANTUM_FRAMEWORKS = ["qiskit", "pennylane", "cirq"] as const;
 const SIMULATOR_OPTIONS: SimulatorOption[] = [
   {
     id: "auto",
-    label: "Auto",
-    help: "The LLM chooses a simulator that fits the problem.",
+    label: "自動",
+    help: "LLM が問題に合うシミュレータを選びます。",
   },
   {
     id: "qiskit_aer_qasm",
     label: "Aer qasm",
     framework: "qiskit",
-    help: "For shot-based measurement counts.",
+    help: "ショットベースの測定 counts 向けです。",
     directive:
       "Use qiskit_aer.AerSimulator() in Qiskit and return shot-based measurement counts.",
   },
@@ -69,7 +69,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "qiskit_aer_statevector",
     label: "Aer statevector",
     framework: "qiskit",
-    help: "For exact statevectors and probabilities.",
+    help: "厳密な状態ベクトルと確率向けです。",
     directive:
       "Use qiskit_aer.AerSimulator(method='statevector') or Statevector in Qiskit and return exact statevector / probabilities.",
   },
@@ -77,7 +77,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "qiskit_aer_density_matrix",
     label: "Aer density matrix",
     framework: "qiskit",
-    help: "For mixed states and noise models.",
+    help: "混合状態やノイズモデル向けです。",
     directive:
       "Use qiskit_aer.AerSimulator(method='density_matrix') in Qiskit and return density_matrix / probabilities with a noise model when needed.",
   },
@@ -85,7 +85,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "qiskit_aer_mps",
     label: "Aer MPS",
     framework: "qiskit",
-    help: "For larger low-entanglement circuits.",
+    help: "低エンタングルメントの大きめの回路向けです。",
     directive:
       "Use qiskit_aer.AerSimulator(method='matrix_product_state') in Qiskit and run a circuit suitable for MPS simulation.",
   },
@@ -93,7 +93,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "pennylane_default_qubit",
     label: "default.qubit",
     framework: "pennylane",
-    help: "PennyLane's standard pure-state simulator.",
+    help: "PennyLane標準の純粋状態シミュレータです。",
     directive:
       "Use qml.device('default.qubit') in PennyLane.",
   },
@@ -101,7 +101,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "pennylane_default_mixed",
     label: "default.mixed",
     framework: "pennylane",
-    help: "For mixed states and noise channels.",
+    help: "混合状態やノイズチャネル向けです。",
     directive:
       "Use qml.device('default.mixed') in PennyLane and use noise channels plus density-matrix-compatible measurements when needed.",
   },
@@ -109,7 +109,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "pennylane_lightning_qubit",
     label: "lightning.qubit",
     framework: "pennylane",
-    help: "A faster pure-state simulator.",
+    help: "高速な純粋状態シミュレータです。",
     directive:
       "Use qml.device('lightning.qubit') in PennyLane. If unavailable, explain the import error and do not silently switch frameworks.",
   },
@@ -117,7 +117,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "cirq_simulator",
     label: "Simulator",
     framework: "cirq",
-    help: "Cirq's standard state-vector simulator.",
+    help: "Cirq標準の状態ベクトルシミュレータです。",
     directive:
       "Use cirq.Simulator() in Cirq and return either state-vector simulation results or sampled measurements.",
   },
@@ -125,7 +125,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "cirq_density_matrix",
     label: "Density matrix",
     framework: "cirq",
-    help: "For mixed states and noise channels.",
+    help: "混合状態やノイズチャネル向けです。",
     directive:
       "Use cirq.DensityMatrixSimulator() in Cirq and use noise channels plus density-matrix-compatible measurements when needed.",
   },
@@ -133,7 +133,7 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
     id: "cirq_clifford",
     label: "Clifford",
     framework: "cirq",
-    help: "Only for Clifford / stabilizer circuits.",
+    help: "Clifford / stabilizer回路専用です。",
     directive:
       "Use cirq.CliffordSimulator() in Cirq. If the problem needs non-Clifford gates, explain why this simulator is unsuitable.",
   },
@@ -204,9 +204,9 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
           className="flex h-full flex-col gap-5"
         >
           <section>
-            <PanelLabel>Request</PanelLabel>
+            <PanelLabel>リクエスト</PanelLabel>
             <p className="text-sm leading-relaxed text-[var(--muted)]">
-              Describe the quantum computation task you want to solve.
+              量子計算で解きたい内容をそのまま入力してください。
             </p>
           </section>
 
@@ -216,20 +216,20 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Describe the quantum computation task..."
+                placeholder="量子計算で解きたい内容を入力..."
                 disabled={busy}
                 className="min-h-52 flex-1 resize-none rounded-sm border border-[var(--border)] bg-[var(--surface)] p-4 pb-12 text-base leading-relaxed outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--ink)] disabled:opacity-60"
               />
               <div className="absolute bottom-3 right-4 flex items-center">
                 <label className="relative inline-flex items-center">
                   <select
-                    aria-label="Model mode"
+                    aria-label="モデルモード"
                     value={modelTier}
                     onChange={(e) => setModelTier(e.target.value as ModelTier)}
                     disabled={busy}
                     className="appearance-none border-0 bg-transparent py-1 pl-0 pr-7 text-lg font-medium text-[#8d8d8d] outline-none transition hover:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <option value="default">Default</option>
+                    <option value="default">標準</option>
                     <option value="pro">Pro</option>
                   </select>
                   <span
@@ -255,12 +255,12 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
 
           <details className="rounded-sm border border-[var(--border)] bg-white">
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[var(--muted)]">
-              Advanced
+              詳細設定
             </summary>
             <div className="flex flex-col gap-4 border-t border-[var(--border)] px-4 py-4">
               <div className="flex flex-col gap-2">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  Framework
+                  フレームワーク
                 </div>
                 <div className="grid grid-cols-2 gap-1 rounded-sm border border-[var(--border)] bg-[var(--surface)] p-1">
                   {(
@@ -290,13 +290,13 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   ))}
                 </div>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  In Auto mode, the LLM chooses a framework that fits the problem.
+                  Auto では LLM が問題に合うフレームワークを選びます。
                 </span>
               </div>
 
               <label className="flex flex-col gap-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  Simulator
+                  シミュレータ
                 </span>
                 <select
                   value={simulator}
@@ -314,7 +314,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                 </select>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
                   {getSimulatorOption(simulator)?.help ??
-                    "Choose a framework to show its compatible simulators."}
+                    "フレームワークを選ぶと対応シミュレータが表示されます。"}
                 </span>
               </label>
 
@@ -328,7 +328,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   disabled={busy}
                   className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)] disabled:opacity-60"
                 >
-                  <option value="auto">Auto</option>
+                  <option value="auto">自動</option>
                   <option value="512">512</option>
                   <option value="1024">1,024</option>
                   <option value="2048">2,048</option>
@@ -336,13 +336,13 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   <option value="8192">8,192</option>
                 </select>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  Number of measurement repetitions. If unspecified, the LLM chooses a value for the problem.
+                  測定を何回繰り返すか。未指定なら LLM が問題に合わせて決めます。
                 </span>
               </label>
 
               <label className="flex flex-col gap-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  Max iterations
+                  最大反復回数
                 </span>
                 <select
                   value={maxIterations}
@@ -350,7 +350,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   disabled={busy}
                   className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)] disabled:opacity-60"
                 >
-                  <option value="auto">Auto</option>
+                  <option value="auto">自動</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
                   <option value="200">200</option>
@@ -358,7 +358,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                   <option value="500">500</option>
                 </select>
                 <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  Classical optimizer iteration limit for VQE/QAOA. If unspecified, the LLM chooses a value.
+                  VQE/QAOA の古典最適化反復上限。未指定なら LLM が選びます。
                 </span>
               </label>
             </div>
@@ -370,12 +370,12 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
             disabled={busy}
             className="rounded-sm bg-[var(--ink)] px-5 py-4 text-base font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-35"
           >
-            {busy ? "Generating" : "Generate"}
+            {busy ? "生成中" : "生成"}
           </button>
 
           {error && (
             <div className="font-mono text-xs text-[var(--muted)]">
-              Error: {error.message}
+              エラー: {error.message}
             </div>
           )}
         </form>
@@ -457,7 +457,7 @@ function EmptyState() {
           <div className="h-3 w-3 rounded-full bg-[var(--surface-strong)]" />
         </div>
         <div className="text-base font-medium text-[var(--muted)]">
-          Generate a quantum result to see the execution here
+          量子計算を生成すると、ここに実行状況と結果が表示されます
         </div>
       </div>
     </div>
@@ -472,7 +472,7 @@ function PartView({ part }: { part: UIMessage["parts"][number] }) {
   if (part.type === "reasoning") {
     return (
       <details className="text-xs text-[var(--muted)]">
-        <summary className="cursor-pointer">Reasoning</summary>
+        <summary className="cursor-pointer">推論</summary>
         <div className="mt-2 whitespace-pre-wrap">{part.text}</div>
       </details>
     );
@@ -642,15 +642,15 @@ function AgentProgress({
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            {activity.some((step) => step.state === "error") ? "Error" : "Run"}
+            {activity.some((step) => step.state === "error") ? "エラー" : "実行"}
           </div>
           <div className="hidden text-sm text-[var(--muted)] sm:block">
-            {busy ? active?.detail ?? "Preparing" : hasRun ? "Complete" : "Not run"}
+            {busy ? active?.detail ?? "準備中" : hasRun ? "完了" : "未実行"}
           </div>
         </div>
         <div className="flex items-center gap-2 font-mono text-xs text-[var(--muted)]">
           {busy && <span className="progress-dot" />}
-          {busy ? "running" : `${doneCount}/${activity.length}`}
+          {busy ? "実行中" : `${doneCount}/${activity.length}`}
         </div>
       </div>
 
@@ -753,13 +753,13 @@ function FinalOutputPanel({
   const codeEntries: OutputCodeEntry[] = [
     {
       id: "source",
-      label: `${getFrameworkLabel(selectedSourceFramework)} (final)`,
+      label: `${getFrameworkLabel(selectedSourceFramework)}（最終）`,
       code: code.code,
     },
     ...(openqasm && liveOpenqasm
       ? QUANTUM_FRAMEWORKS.map((framework) => ({
           id: convertedFormatId(framework),
-          label: `${getFrameworkLabel(framework)} (from OpenQASM)`,
+          label: `${getFrameworkLabel(framework)}（OpenQASM由来）`,
           code: liveConvertedCodes[framework] ?? "",
         }))
       : []),
@@ -908,7 +908,7 @@ function FinalOutputPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            Final Output
+            最終出力
           </div>
           <label className="mt-2 flex min-w-0 items-center gap-2">
             <select
@@ -933,7 +933,7 @@ function FinalOutputPanel({
             disabled={!canUndoQasm}
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
           >
-            Undo
+            戻す
           </button>
           <button
             type="button"
@@ -941,7 +941,7 @@ function FinalOutputPanel({
             disabled={!canRedoQasm}
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
           >
-            Redo
+            やり直し
           </button>
           <button
             type="button"
@@ -949,7 +949,7 @@ function FinalOutputPanel({
             disabled={!openqasm}
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
           >
-            Import QASM
+            QASM読込
           </button>
           <button
             type="button"
@@ -957,7 +957,7 @@ function FinalOutputPanel({
             disabled={!liveOpenqasm}
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35"
           >
-            Export QASM
+            QASM出力
           </button>
           <button
             type="button"
@@ -965,10 +965,10 @@ function FinalOutputPanel({
             className="rounded-sm border border-[var(--ink)] px-3 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white"
           >
             {copyState === "copied"
-              ? "Copied"
+              ? "コピー済み"
               : copyState === "failed"
-              ? "Copy failed"
-              : "Copy"}
+              ? "コピー失敗"
+              : "コピー"}
           </button>
           <input
             ref={qasmFileInputRef}
@@ -1075,10 +1075,10 @@ function DirectSimulationPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div>
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            Run Simulation
+            シミュレーション実行
           </div>
           <div className="mt-1 text-xs text-[var(--muted)]">
-            Execute the edited code or the current circuit-derived code
+            編集したコード、または現在の回路から生成したコードを実行します
           </div>
         </div>
         <button
@@ -1087,14 +1087,14 @@ function DirectSimulationPanel({
           disabled={running || !code.trim()}
           className="rounded-sm border border-[var(--ink)] px-4 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
         >
-          {running ? "Running" : "Run"}
+          {running ? "実行中" : "実行"}
         </button>
       </div>
 
       <div className="grid gap-3 px-4 py-3 lg:grid-cols-[180px_220px_minmax(0,1fr)]">
         <label className="flex flex-col gap-1">
           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-            Framework
+            フレームワーク
           </span>
           <select
             value={framework}
@@ -1113,7 +1113,7 @@ function DirectSimulationPanel({
 
         <label className="flex flex-col gap-1">
           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-            Simulator
+            シミュレータ
           </span>
           <select
             value={simulator}
@@ -1131,10 +1131,10 @@ function DirectSimulationPanel({
         </label>
 
         <div className="flex items-end text-xs leading-relaxed text-[var(--muted)]">
-          Source: {source}.{" "}
+          入力: {source}.{" "}
           {source === "source"
-            ? "For final source code, simulator changes are advisory unless the code itself uses that simulator."
-            : "For OpenQASM-derived code, the selected simulator is injected into the wrapper."}
+            ? "最終ソースコードでは、コード側がそのシミュレータを使う場合にのみ選択が反映されます。"
+            : "OpenQASM由来コードでは、選択したシミュレータをwrapperに注入します。"}
         </div>
       </div>
 
@@ -1142,7 +1142,7 @@ function DirectSimulationPanel({
         <div className="border-t border-[var(--border)] px-4 py-3">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
-              {result.ok ? "Success" : "Failed"}
+              {result.ok ? "成功" : "失敗"}
             </span>
             {result.durationMs != null && (
               <span className="font-mono text-xs text-[var(--muted)]">
@@ -1218,8 +1218,8 @@ function AppBuilderPanel({
       if (!response.ok || isAppBuilderError(payload)) {
         throw new Error(
           isAppBuilderError(payload)
-            ? payload.error ?? "Failed to generate app"
-            : "Failed to generate app",
+            ? payload.error ?? "アプリ生成に失敗しました"
+            : "アプリ生成に失敗しました",
         );
       }
       setGeneratedApp(payload);
@@ -1235,10 +1235,10 @@ function AppBuilderPanel({
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div>
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            App Builder
+            アプリ生成
           </div>
           <div className="mt-1 text-xs text-[var(--muted)]">
-            Turn the final quantum algorithm into a small usable app
+            最終量子アルゴリズムを小さな実用アプリに変換します
           </div>
         </div>
         <button
@@ -1247,14 +1247,14 @@ function AppBuilderPanel({
           disabled={generating || !openqasm.trim()}
           className="rounded-sm border border-[var(--ink)] px-4 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
         >
-          {generating ? "Generating" : "Generate App"}
+          {generating ? "生成中" : "アプリ生成"}
         </button>
       </div>
 
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="flex flex-col gap-3">
           <div>
-            <ReportSubheading>Suggested App Direction</ReportSubheading>
+            <ReportSubheading>提案されるアプリ方向性</ReportSubheading>
             <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed">
               {defaultIdea}
             </div>
@@ -1262,12 +1262,12 @@ function AppBuilderPanel({
 
           <label className="flex flex-col gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-              Custom Instructions
+              カスタム指示
             </span>
             <textarea
               value={instructions}
               onChange={(event) => setInstructions(event.target.value)}
-              placeholder="Example: Make this for finance stakeholders rather than researchers. Use Stock A/B/C as asset names. Add cards that explain the result."
+              placeholder="例: 研究者向けではなく金融担当者向けにする。資産名は Stock A/B/C にする。結果を説明するカードを追加する。"
               className="min-h-28 resize-y rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed outline-none focus:border-[var(--ink)]"
             />
           </label>
@@ -1307,20 +1307,20 @@ function AppBuilderPanel({
                   }
                   className="rounded-sm border border-[var(--ink)] px-3 py-2 text-xs font-medium transition hover:bg-[var(--ink)] hover:text-white"
                 >
-                  Download HTML
+                  HTMLをダウンロード
                 </button>
                 <button
                   type="button"
                   onClick={() => navigator.clipboard.writeText(generatedApp.html)}
                   className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
                 >
-                  Copy HTML
+                  HTMLをコピー
                 </button>
               </div>
             </div>
           ) : (
             <div className="grid min-h-48 place-items-center rounded-sm border border-dashed border-[var(--border)] bg-[var(--surface)] p-4 text-center text-sm text-[var(--muted)]">
-              Generate an app to get a downloadable single-file HTML prototype.
+              アプリを生成すると、ダウンロード可能な単一HTMLプロトタイプが作成されます。
             </div>
           )}
         </div>
@@ -1354,10 +1354,10 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            Analysis Report
+            分析レポート
           </div>
           <div className="mt-1 text-xs text-[var(--muted)]">
-            {report.createdAt} / reproducible run summary
+            {report.createdAt} / 再現可能な実行サマリー
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
@@ -1368,7 +1368,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
             }
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
           >
-            Export MD
+            MD出力
           </button>
           <button
             type="button"
@@ -1377,7 +1377,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
             }
             className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
           >
-            Export JSON
+            JSON出力
           </button>
         </div>
       </div>
@@ -1385,15 +1385,15 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
         <div className="flex flex-col gap-4">
           <section>
-            <ReportHeading>Executive Summary</ReportHeading>
+            <ReportHeading>概要</ReportHeading>
             <div className="whitespace-pre-wrap text-sm leading-relaxed">
               {report.assistantSummary ??
-                "The execution plan, simulation result, and validation result are summarized below."}
+                "実行計画、シミュレーション結果、検証結果を以下にまとめます。"}
             </div>
           </section>
 
           <section>
-            <ReportHeading>Problem Setup</ReportHeading>
+            <ReportHeading>問題設定</ReportHeading>
             <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed">
               {report.userRequest}
             </div>
@@ -1401,12 +1401,12 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
 
           {report.plan && (
             <section>
-              <ReportHeading>Method</ReportHeading>
+              <ReportHeading>手法</ReportHeading>
               <div className="grid gap-2 sm:grid-cols-2">
-                <ReportField label="Framework" value={report.plan.framework} />
-                <ReportField label="Algorithm" value={report.plan.algorithm} />
+                <ReportField label="フレームワーク" value={report.plan.framework} />
+                <ReportField label="アルゴリズム" value={report.plan.algorithm} />
                 <ReportField
-                  label="Qubits"
+                  label="量子ビット数"
                   value={
                     report.plan.qubits_estimate != null
                       ? `${report.plan.qubits_estimate}`
@@ -1414,7 +1414,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                   }
                 />
                 <ReportField
-                  label="Runtime Estimate"
+                  label="実行時間見積もり"
                   value={
                     report.plan.expected_runtime_sec != null
                       ? `${report.plan.expected_runtime_sec}s`
@@ -1435,7 +1435,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
               {report.plan.parameters &&
                 Object.keys(report.plan.parameters).length > 0 && (
                   <div className="mt-3">
-                    <ReportSubheading>Parameters</ReportSubheading>
+                    <ReportSubheading>パラメータ</ReportSubheading>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {Object.entries(report.plan.parameters).map(([key, value]) => (
                         <ReportField
@@ -1452,14 +1452,14 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
 
           {report.verification && (
             <section>
-              <ReportHeading>Validation</ReportHeading>
+              <ReportHeading>検証</ReportHeading>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-sm border border-[var(--ink)] px-2 py-1 text-xs font-medium">
-                  {report.verification.aligned ? "Aligned" : "Needs Review"}
+                  {report.verification.aligned ? "整合" : "要確認"}
                 </span>
                 {report.verification.confidence && (
                   <span className="text-xs text-[var(--muted)]">
-                    confidence: {report.verification.confidence}
+                    信頼度: {report.verification.confidence}
                   </span>
                 )}
               </div>
@@ -1478,10 +1478,10 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                       >
                         <div className="font-mono">{item.aspect}</div>
                         <div className="mt-1 text-[var(--muted)]">
-                          expected: {item.expected}
+                          期待: {item.expected}
                         </div>
                         <div className="text-[var(--muted)]">
-                          actual: {item.actual}
+                          実際: {item.actual}
                         </div>
                       </li>
                     ))}
@@ -1493,7 +1493,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
 
         <div className="flex flex-col gap-4">
           <section>
-            <ReportHeading>Key Results</ReportHeading>
+            <ReportHeading>主要結果</ReportHeading>
             {resultItems.length > 0 ? (
               <div className="grid gap-2">
                 {resultItems.map((metric) => (
@@ -1506,14 +1506,14 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
               </div>
             ) : (
               <div className="text-sm text-[var(--muted)]">
-                No numeric metrics were detected.
+                数値指標は検出されませんでした。
               </div>
             )}
           </section>
 
           {topCounts.length > 0 && (
             <section>
-              <ReportHeading>Top Measurement Outcomes</ReportHeading>
+              <ReportHeading>上位測定結果</ReportHeading>
               <div className="rounded-sm border border-[var(--border)]">
                 {topCounts.map(([state, value]) => (
                   <div
@@ -1531,7 +1531,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
           )}
 
           <section>
-            <ReportHeading>Artifacts</ReportHeading>
+            <ReportHeading>成果物</ReportHeading>
             <div className="flex flex-wrap gap-2">
               {report.artifacts.map((artifact) => (
                 <span
@@ -1548,7 +1548,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
             <section>
               <ReportHeading>OpenQASM</ReportHeading>
               <div className="text-sm">
-                {report.openqasm.ok ? "Extracted" : "Extraction failed or incomplete"}
+                {report.openqasm.ok ? "抽出済み" : "抽出失敗または不完全"}
                 {report.openqasm.version ? ` / v${report.openqasm.version}` : ""}
               </div>
               {report.openqasm.notes && report.openqasm.notes.length > 0 && (
@@ -1568,7 +1568,7 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
 
           {report.limitations.length > 0 && (
             <section>
-              <ReportHeading>Limitations</ReportHeading>
+              <ReportHeading>制約</ReportHeading>
               <ul className="flex list-disc flex-col gap-1 pl-4 text-xs leading-relaxed text-[var(--muted)]">
                 {report.limitations.map((item, index) => (
                   <li key={`${index}-${item.slice(0, 32)}`}>{item}</li>
@@ -1691,7 +1691,7 @@ function ToolPart({ part }: { part: unknown }) {
     >
       {input?.purpose && (
         <div className="border-b border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
-          Purpose: {input.purpose}
+          目的: {input.purpose}
         </div>
       )}
       {input?.code && (
@@ -1753,7 +1753,7 @@ function OpenQasmToolPart({
       <div className="flex flex-col gap-3 px-3 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
-            {output?.ok ? "Extracted" : failed ? "Needs review" : "Extracting"}
+            {output?.ok ? "抽出済み" : failed ? "要確認" : "抽出中"}
           </span>
           {output?.framework && (
             <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs">
@@ -1775,7 +1775,7 @@ function OpenQasmToolPart({
 
         {output?.ok && (
           <div className="text-xs text-[var(--muted)]">
-            OpenQASM and converted code are available in Final Output.
+            OpenQASM と変換コードは最終出力で確認できます。
           </div>
         )}
       </div>
@@ -1791,7 +1791,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
   const [editedCode, setEditedCode] = useState<string | null>(null);
   const lastInitialRef = useRef(initialCode);
 
-  // Reset local edits when initialCode changes.
+  // initialCode が変わったらローカル編集をリセットする。
   if (lastInitialRef.current !== initialCode) {
     lastInitialRef.current = initialCode;
     if (editedCode !== null) setEditedCode(null);
@@ -1802,7 +1802,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
   return (
     <details className="border-t border-[var(--border)]">
       <summary className="cursor-pointer px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--fg)]">
-        View/edit generated code ({code.split("\n").length} lines)
+        生成コードを表示/編集（{code.split("\n").length}行）
       </summary>
       <textarea
         value={code}
@@ -1811,7 +1811,7 @@ function EditableCode({ initialCode }: { initialCode: string }) {
         className="min-h-80 w-full resize-y border-0 border-t border-[var(--border)] bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
       />
       <div className="border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
-        Edits are local drafts in this panel.
+        編集内容はこのパネル内のローカル下書きです。
       </div>
     </details>
   );
@@ -1826,7 +1826,7 @@ function ResultVisualization({ result }: { result: unknown }) {
       {metrics.length > 0 && (
         <section>
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-            Metrics
+            指標
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {metrics.map((metric) => (
@@ -1849,7 +1849,7 @@ function ResultVisualization({ result }: { result: unknown }) {
       {counts && (
         <section>
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-            Measurement distribution
+            測定分布
           </div>
           <CountsChart counts={counts} />
         </section>
@@ -1960,7 +1960,7 @@ function PlanToolPart({
       <div className="flex flex-col gap-3 px-3 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
-            {plan ? "Planned" : "Planning"}
+            {plan ? "計画済み" : "計画中"}
           </span>
           {plan?.algorithm && (
             <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 font-mono text-xs">
@@ -1979,26 +1979,26 @@ function PlanToolPart({
           )}
           {plan?.qubits_estimate != null && (
             <span className="text-xs text-[var(--muted)]">
-              {plan.qubits_estimate} qubits
+              {plan.qubits_estimate} qubit
             </span>
           )}
           {plan?.expected_runtime_sec != null && (
             <span className="text-xs text-[var(--muted)]">
-              approx. {plan.expected_runtime_sec}s
+              約 {plan.expected_runtime_sec}s
             </span>
           )}
         </div>
 
         {plan?.problem_summary && (
           <div className="text-sm">
-            <span className="text-[var(--muted)]">Task: </span>
+            <span className="text-[var(--muted)]">タスク: </span>
             {plan.problem_summary}
           </div>
         )}
 
         {plan?.algorithm_rationale && (
           <div className="text-xs leading-relaxed text-[var(--muted)]">
-            <span>Rationale: </span>
+            <span>選定理由: </span>
             {plan.algorithm_rationale}
           </div>
         )}
@@ -2006,7 +2006,7 @@ function PlanToolPart({
         {plan?.parameters && Object.keys(plan.parameters).length > 0 && (
           <div>
             <div className="mb-1 text-xs font-medium uppercase text-[var(--muted)]">
-              Parameters
+              パラメータ
             </div>
             <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
               {Object.entries(plan.parameters).map(([k, v]) => (
@@ -2027,7 +2027,7 @@ function PlanToolPart({
         {plan?.success_criteria && (
           <details>
             <summary className="cursor-pointer text-xs text-[var(--muted)] hover:text-[var(--fg)]">
-              Success criteria
+              成功条件
             </summary>
             <pre className="!mt-1 !text-xs">
               {JSON.stringify(plan.success_criteria, null, 2)}
@@ -2037,7 +2037,7 @@ function PlanToolPart({
 
         {plan?.expected_output_keys && plan.expected_output_keys.length > 0 && (
           <div className="text-xs text-[var(--muted)]">
-            <span>Expected output keys: </span>
+            <span>期待される出力キー: </span>
             <span className="font-mono text-[var(--fg)]">
               {plan.expected_output_keys.join(", ")}
             </span>
@@ -2077,7 +2077,7 @@ function VerifyToolPart({
 }) {
   const aligned = output?.aligned;
   const verdictLabel =
-    aligned === true ? "Aligned" : aligned === false ? "Needs review" : "Checking";
+    aligned === true ? "整合" : aligned === false ? "要確認" : "確認中";
 
   return (
     <ToolCard
@@ -2095,7 +2095,7 @@ function VerifyToolPart({
             </span>
             {output.confidence && (
               <span className="text-xs text-[var(--muted)]">
-                Confidence: {output.confidence}
+                信頼度: {output.confidence}
               </span>
             )}
           </div>
@@ -2107,7 +2107,7 @@ function VerifyToolPart({
           {output.mismatches && output.mismatches.length > 0 && (
             <div>
               <div className="mb-1 text-xs font-medium uppercase text-[var(--muted)]">
-                Mismatches
+                不一致
               </div>
               <ul className="flex flex-col gap-2">
                 {output.mismatches.map((m) => (
@@ -2117,10 +2117,10 @@ function VerifyToolPart({
                   >
                     <div className="font-mono">{m.aspect}</div>
                     <div className="mt-1 text-[var(--muted)]">
-                      <span>Expected:</span> {m.expected}
+                      <span>期待:</span> {m.expected}
                     </div>
                     <div className="text-[var(--muted)]">
-                      <span>Actual:</span> {m.actual}
+                      <span>実際:</span> {m.actual}
                     </div>
                   </li>
                 ))}
@@ -2131,7 +2131,7 @@ function VerifyToolPart({
           {output.suggestions && output.suggestions.length > 0 && (
             <div>
               <div className="mb-1 text-xs font-medium uppercase text-[var(--muted)]">
-                Suggestions
+                修正案
               </div>
               <ul className="flex list-disc flex-col gap-1 pl-4 text-xs text-[var(--fg)]">
                 {output.suggestions.map((s, i) => (
@@ -2146,18 +2146,18 @@ function VerifyToolPart({
       {input && (input.userRequest || input.interpretation) && (
         <details className="border-t border-[var(--border)]">
           <summary className="cursor-pointer px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--fg)]">
-            Validation input
+            検証入力
           </summary>
           <div className="flex flex-col gap-2 px-3 pb-3 text-xs">
             {input.userRequest && (
               <div>
-                <div className="text-[var(--muted)]">User request</div>
+                <div className="text-[var(--muted)]">ユーザー要望</div>
                 <div className="whitespace-pre-wrap">{input.userRequest}</div>
               </div>
             )}
             {input.interpretation && (
               <div>
-                <div className="text-[var(--muted)]">Agent interpretation</div>
+                <div className="text-[var(--muted)]">エージェントの解釈</div>
                 <div className="whitespace-pre-wrap">{input.interpretation}</div>
               </div>
             )}
@@ -2176,26 +2176,26 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
   const base: ActivityStep[] = [
     {
       id: "request_plan",
-      title: "Plan",
-      detail: "Convert the request into a quantum execution plan",
+      title: "計画",
+      detail: "要望を量子計算の実行計画に変換",
       state: "waiting",
     },
     {
       id: "simulate",
-      title: "Simulate",
-      detail: "Run with the selected framework simulator",
+      title: "シミュレーション",
+      detail: "選択されたフレームワークのシミュレータで実行",
       state: "waiting",
     },
     {
       id: "verify_intent_alignment",
-      title: "Verify",
-      detail: "Validate request, plan, code, and result alignment",
+      title: "検証",
+      detail: "要望、計画、コード、結果の整合性を確認",
       state: "waiting",
     },
     {
       id: "openqasm",
       title: "OpenQASM",
-      detail: "Extract the circuit portion as OpenQASM",
+      detail: "回路部分をOpenQASMとして抽出",
       state: "waiting",
     },
   ];
@@ -2360,13 +2360,13 @@ function getFinalAnalysisReport(
   const userRequest = stripAdvancedSettings(getLatestMessageText(messages, "user"));
   const assistantSummary = getLatestAssistantText(messages);
   const artifacts = [
-    simulationPart?.input?.code ? "Python source" : null,
+    simulationPart?.input?.code ? "Pythonソース" : null,
     openqasmPart?.output?.openqasm ? "OpenQASM" : null,
     openqasmPart?.output?.convertedFrameworkCodes
-      ? "Framework conversion snippets"
+      ? "フレームワーク変換コード"
       : null,
-    "Markdown report",
-    "JSON report",
+    "Markdownレポート",
+    "JSONレポート",
   ].filter((item): item is string => Boolean(item));
   const limitations = buildReportLimitations({
     simulationPart,
@@ -2375,7 +2375,7 @@ function getFinalAnalysisReport(
   });
 
   return {
-    title: "namekoQ Analysis Report",
+    title: "namekoQ 分析レポート",
     createdAt: new Date().toLocaleString("ja-JP", {
       year: "numeric",
       month: "2-digit",
@@ -2467,7 +2467,7 @@ function getLatestAssistantText(messages: UIMessage[]): string | undefined {
 }
 
 function stripAdvancedSettings(text: string): string {
-  return text.split("\n\nAdditional settings:")[0]?.trim() ?? text.trim();
+  return text.split("\n\n追加設定:")[0]?.trim() ?? text.trim();
 }
 
 function buildReportLimitations({
@@ -2481,17 +2481,17 @@ function buildReportLimitations({
 }): string[] {
   const items = new Set<string>();
   items.add(
-    "LLM generated code should be reviewed before use in research conclusions.",
+    "LLMが生成したコードは、研究上の結論に使う前に必ずレビューしてください。",
   );
   items.add(
-    "OpenQASM artifacts represent the circuit portion only; Hamiltonians, optimizers, and classical post-processing may not be encoded.",
+    "OpenQASM成果物は回路部分のみを表します。Hamiltonian、optimizer、古典後処理は含まれない場合があります。",
   );
 
   if (simulationPart?.output?.stderr?.trim()) {
-    items.add("The simulation produced stderr output; inspect the detailed run log.");
+    items.add("シミュレーションでstderrが出力されました。詳細ログを確認してください。");
   }
   if (verifyPart?.output?.aligned === false) {
-    items.add("The critic marked this run as not fully aligned with the request.");
+    items.add("criticは、この実行が要望と完全には整合していないと判定しました。");
   }
   if (verifyPart?.output?.suggestions?.length) {
     for (const suggestion of verifyPart.output.suggestions.slice(0, 3)) {
@@ -2499,7 +2499,7 @@ function buildReportLimitations({
     }
   }
   if (openqasmPart?.output?.ok === false || openqasmPart?.output?.openqasmError) {
-    items.add("OpenQASM extraction was incomplete or failed for this run.");
+    items.add("この実行ではOpenQASM抽出が不完全、または失敗しました。");
   }
   if (openqasmPart?.output?.notes?.length) {
     for (const note of openqasmPart.output.notes.slice(0, 4)) {
@@ -2518,28 +2518,28 @@ function getDefaultAppIdea(report: AnalysisReport | null): string {
 
   if (/qaoa/i.test(algorithm)) {
     if (result && ("selected_assets" in result || "counts_top" in result)) {
-      return "A decision dashboard powered by the QAOA measurement result. It compares top bitstrings, candidate selections, and objective values so the user can inspect the final option.";
+      return "QAOAの測定結果を使った意思決定ダッシュボード。上位bitstring、候補選択、目的関数値を比較し、最終候補を確認できるようにします。";
     }
-    return "An optimization result viewer for QAOA candidate solutions. It helps users compare the bitstring distribution and constraint satisfaction before choosing a solution.";
+    return "QAOA候補解の最適化結果ビューア。解を選ぶ前にbitstring分布と制約充足を比較できます。";
   }
 
   if (/vqe/i.test(algorithm)) {
-    return "An experiment report and energy inspection tool for VQE results. It highlights estimated energy, parameters, difference from known references, and modeling limitations.";
+    return "VQE結果の実験レポート兼エネルギー確認ツール。推定エネルギー、パラメータ、既知参照との差、モデル上の制約を確認できます。";
   }
 
   if (/grover/i.test(algorithm)) {
-    return "A search demonstration app for Grover results, showing the target item, observed top states, and success probability.";
+    return "Grover結果の探索デモアプリ。ターゲット、観測された上位状態、成功確率を表示します。";
   }
 
   if (/qpe|phase/i.test(algorithm)) {
-    return "A phase-estimation app that compares inferred phase, candidate bitstrings, and error against the target value.";
+    return "位相推定アプリ。推定位相、候補bitstring、ターゲット値との差を比較します。";
   }
 
   if (/bell|ghz/i.test(algorithm)) {
-    return "An entanglement measurement explorer for Bell/GHZ results, showing correlated outcomes and circuit artifacts.";
+    return "Bell/GHZ結果のエンタングルメント測定ビューア。相関した測定結果と回路成果物を表示します。";
   }
 
-  return "A compact analysis app built from the final quantum circuit and execution result, focused on helping users interpret and act on the result rather than just viewing the circuit.";
+  return "最終量子回路と実行結果から作る小さな分析アプリ。単に回路を表示するだけでなく、結果の解釈と活用を支援します。";
 }
 
 function createReportMarkdown(report: AnalysisReport): string {
@@ -2556,57 +2556,57 @@ function createReportMarkdown(report: AnalysisReport): string {
   return compactMarkdownLines([
     `# ${report.title}`,
     "",
-    `- Created: ${report.createdAt}`,
-    `- Framework: ${report.plan?.framework ?? report.simulation?.framework ?? "-"}`,
-    `- Algorithm: ${report.plan?.algorithm ?? "-"}`,
-    `- Validation: ${
+    `- 作成日時: ${report.createdAt}`,
+    `- フレームワーク: ${report.plan?.framework ?? report.simulation?.framework ?? "-"}`,
+    `- アルゴリズム: ${report.plan?.algorithm ?? "-"}`,
+    `- 検証: ${
       report.verification?.aligned == null
         ? "-"
         : report.verification.aligned
-        ? "aligned"
-        : "needs review"
+        ? "整合"
+        : "要確認"
     }`,
     "",
-    "## Executive Summary",
+    "## 概要",
     "",
-    report.assistantSummary ?? "No final assistant summary was available.",
+    report.assistantSummary ?? "最終サマリーは取得できませんでした。",
     "",
-    "## User Request",
+    "## ユーザー要望",
     "",
     report.userRequest || "-",
     "",
-    "## Method",
+    "## 手法",
     "",
-    `- Domain: ${report.plan?.domain ?? "-"}`,
-    `- Framework: ${report.plan?.framework ?? "-"}`,
-    `- Algorithm: ${report.plan?.algorithm ?? "-"}`,
-    `- Qubits: ${report.plan?.qubits_estimate ?? "-"}`,
-    `- Runtime estimate: ${
+    `- ドメイン: ${report.plan?.domain ?? "-"}`,
+    `- フレームワーク: ${report.plan?.framework ?? "-"}`,
+    `- アルゴリズム: ${report.plan?.algorithm ?? "-"}`,
+    `- 量子ビット数: ${report.plan?.qubits_estimate ?? "-"}`,
+    `- 実行時間見積もり: ${
       report.plan?.expected_runtime_sec != null
         ? `${report.plan.expected_runtime_sec}s`
         : "-"
     }`,
     "",
-    report.plan?.problem_summary ? `Problem summary: ${report.plan.problem_summary}` : "",
+    report.plan?.problem_summary ? `問題概要: ${report.plan.problem_summary}` : "",
     report.plan?.algorithm_rationale
-      ? `Rationale: ${report.plan.algorithm_rationale}`
+      ? `選定理由: ${report.plan.algorithm_rationale}`
       : "",
     "",
-    "## Parameters",
+    "## パラメータ",
     "",
     "```json",
     JSON.stringify(report.plan?.parameters ?? {}, null, 2),
     "```",
     "",
-    "## Key Results",
+    "## 主要結果",
     "",
     ...(resultItems.length > 0
       ? resultItems.map((metric) => `- ${metric.key}: ${metric.value}`)
-      : ["- No scalar metrics detected."]),
+      : ["- スカラー指標は検出されませんでした。"]),
     "",
     ...(topCounts.length > 0
       ? [
-          "## Measurement Outcomes",
+          "## 測定結果",
           "",
           "| State | Count |",
           "|---|---:|",
@@ -2614,26 +2614,26 @@ function createReportMarkdown(report: AnalysisReport): string {
           "",
         ]
       : []),
-    "## Validation",
+    "## 検証",
     "",
-    `- Aligned: ${report.verification?.aligned ?? "-"}`,
-    `- Confidence: ${report.verification?.confidence ?? "-"}`,
+    `- 整合: ${report.verification?.aligned ?? "-"}`,
+    `- 信頼度: ${report.verification?.confidence ?? "-"}`,
     report.verification?.summary ?? "",
     "",
     ...(report.verification?.mismatches?.length
       ? [
-          "### Mismatches",
+          "### 不一致",
           "",
           ...report.verification.mismatches.map(
             (item) =>
-              `- ${item.aspect}: expected ${item.expected}; actual ${item.actual}`,
+              `- ${item.aspect}: 期待 ${item.expected}; 実際 ${item.actual}`,
           ),
           "",
         ]
       : []),
     ...(report.verification?.suggestions?.length
       ? [
-          "### Suggestions",
+          "### 修正案",
           "",
           ...report.verification.suggestions.map((item) => `- ${item}`),
           "",
@@ -2641,18 +2641,18 @@ function createReportMarkdown(report: AnalysisReport): string {
       : []),
     "## OpenQASM",
     "",
-    `- Status: ${report.openqasm?.ok ? "extracted" : "not available"}`,
-    `- Version: ${report.openqasm?.version ?? "-"}`,
+    `- 状態: ${report.openqasm?.ok ? "抽出済み" : "利用不可"}`,
+    `- バージョン: ${report.openqasm?.version ?? "-"}`,
     ...(report.openqasm?.notes?.length
       ? ["", ...report.openqasm.notes.map((note) => `- ${note}`)]
       : []),
-    report.openqasm?.error ? `\nError: ${report.openqasm.error}` : "",
+    report.openqasm?.error ? `\nエラー: ${report.openqasm.error}` : "",
     "",
-    "## Limitations",
+    "## 制約",
     "",
     ...report.limitations.map((item) => `- ${item}`),
     "",
-    "## Artifacts",
+    "## 成果物",
     "",
     ...report.artifacts.map((artifact) => `- ${artifact}`),
     "",
@@ -2744,25 +2744,25 @@ function withAdvancedSettings(
 
   if (settings.framework !== "auto") {
     directives.push(
-      `Use ${getFrameworkLabel(settings.framework)} as the framework`,
-      "Generate native code for the selected framework rather than translating from another framework",
+      `フレームワークは ${getFrameworkLabel(settings.framework)} を使う`,
+      "別フレームワークからの変換ではなく、選択したフレームワークのネイティブコードを生成する",
     );
   }
 
   const simulatorOption = getSimulatorOption(settings.simulator);
   if (settings.simulator !== "auto" && simulatorOption?.directive) {
     directives.push(
-      `Use ${simulatorOption.label} as the simulator`,
+      `シミュレータは ${simulatorOption.label} を使う`,
       simulatorOption.directive,
     );
   }
 
   if (settings.shots !== "auto") {
-    directives.push(`Use ${settings.shots} shots`);
+    directives.push(`shots は ${settings.shots} にする`);
   }
   if (settings.maxIterations !== "auto") {
     directives.push(
-      `Use ${settings.maxIterations} as max_iterations for VQE/QAOA`,
+      `VQE/QAOA の max_iterations は ${settings.maxIterations} にする`,
     );
   }
 
@@ -2771,7 +2771,7 @@ function withAdvancedSettings(
   return [
     text.trim(),
     "",
-    "Additional settings:",
+    "追加設定:",
     ...directives.map((directive) => `- ${directive}`),
   ].join("\n");
 }
@@ -2783,7 +2783,7 @@ function getFrameworkLabel(framework: QuantumFramework): string {
 }
 
 function getFrameworkPreferenceLabel(framework: FrameworkPreference): string {
-  if (framework === "auto") return "Auto";
+  if (framework === "auto") return "自動";
   return getFrameworkLabel(framework);
 }
 
@@ -3065,8 +3065,8 @@ function formatNumber(value: number): string {
 }
 
 function getStepStateLabel(state: ActivityStep["state"]): string {
-  if (state === "active") return "running";
-  if (state === "done") return "done";
-  if (state === "error") return "check";
-  return "queued";
+  if (state === "active") return "実行中";
+  if (state === "done") return "完了";
+  if (state === "error") return "確認";
+  return "待機";
 }

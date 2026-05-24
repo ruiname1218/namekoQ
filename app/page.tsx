@@ -35,7 +35,7 @@ export default function Page() {
           </div>
         </div>
         <div className="hidden text-xs uppercase tracking-[0.22em] text-[var(--muted)] sm:block">
-          Quantum
+          量子
         </div>
       </header>
       <Chat examples={EXAMPLES} />

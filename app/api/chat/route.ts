@@ -68,7 +68,7 @@ function resolveModelProfile(tier: ModelTier): ModelProfile {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "DEEPSEEK_API_KEY is required when using Default / DeepSeek V4 Pro.",
+      "Default / DeepSeek V4 Pro を使うには DEEPSEEK_API_KEY が必要です。",
     );
   }
 
@@ -144,16 +144,16 @@ async function generateStructuredObject<T>({
     system: [
       system,
       "",
-      "Return only one valid JSON object that matches the requested schema.",
-      "Do not wrap the JSON in markdown fences. Do not include commentary.",
+      "要求されたschemaに一致する有効なJSONオブジェクトを1つだけ返してください。",
+      "JSONをmarkdown fenceで囲まないでください。補足説明も含めないでください。",
     ].join("\n"),
     prompt: [
       prompt,
       "",
-      "JSON schema shape reminder:",
+      "JSON schemaの形:",
       schemaDescription(schema),
       "",
-      "Return only valid JSON.",
+      "有効なJSONのみを返してください。",
     ].join("\n"),
   });
 
@@ -175,7 +175,7 @@ function extractJsonObject(text: string): unknown {
     if (start >= 0 && end > start) {
       return JSON.parse(trimmed.slice(start, end + 1));
     }
-    throw new Error("Model did not return a parseable JSON object.");
+    throw new Error("モデルがparse可能なJSONオブジェクトを返しませんでした。");
   }
 }
 
@@ -200,10 +200,10 @@ function schemaDescription(schema: z.ZodType<unknown>): string {
 
 const requestPlanTool = tool({
   description: [
-    "Submit a structured quantum execution plan from the user request.",
-    "This must be called first before simulate_qiskit / simulate_pennylane / simulate_cirq.",
-    "The Zod schema checks types, enums, units, and ranges. If validation fails, correct the tool call and submit again.",
-    "Semantic validity is checked later by verify_intent_alignment.",
+    "ユーザー要望から量子計算の実行計画を構造化して提出する。",
+    "simulate_qiskit / simulate_pennylane / simulate_cirq の前に必ず最初に呼ぶこと。",
+    "Zod schemaで型、enum、単位、範囲を確認する。validationに失敗した場合はtool callを修正して再提出する。",
+    "意味的な妥当性は後段の verify_intent_alignment で確認する。",
   ].join("\n"),
   inputSchema: PlanSchema,
   execute: async (plan) => {
@@ -216,16 +216,16 @@ const requestPlanTool = tool({
     );
     return {
       plan,
-      next: "Plan accepted. Write Python code for the selected framework according to this plan, then call the matching simulation tool.",
+      next: "計画を受理しました。このplanに沿って選択されたframeworkのPythonコードを書き、対応するsimulation toolを呼んでください。",
     };
   },
 });
 
 const simulationInputSchema = z.object({
-  code: z.string().min(1).describe("Full Python code to execute"),
+  code: z.string().min(1).describe("実行するPythonコード全文"),
   purpose: z
     .string()
-    .describe("Briefly state what this simulation is meant to verify"),
+    .describe("このシミュレーションで確認したいことを短く書く"),
 });
 
 function createSimulationTool({
@@ -244,9 +244,9 @@ function createSimulationTool({
       `Run ${framework} Python code with ${simulator} and return the result.`,
       `Use this tool only when plan.framework is "${framework}".`,
       codeRule,
-      "The code must print a JSON-compatible dict as the final stdout line.",
-      "Example: print({'counts': {'00': 512, '11': 512}, 'shots': 1024})",
-      "Do not pass code for another framework or converted wrapper code into this tool.",
+      "コードはstdoutの最後の行にJSON互換のdictをprintすること。",
+      "例: print({'counts': {'00': 512, '11': 512}, 'shots': 1024})",
+      "別frameworkのコードや変換wrapper codeをこのtoolに渡してはいけない。",
     ].join("\n"),
     inputSchema: simulationInputSchema,
     execute: async ({ code, purpose }) => {
@@ -277,7 +277,7 @@ const simulateQiskitTool = createSimulationTool({
   framework: "qiskit",
   simulator: "Aer qasm / statevector / density matrix / MPS / qiskit-aer primitives",
   codeRule:
-    "Pass only Qiskit + qiskit-aer code. Use AerSimulator(), AerSimulator(method='statevector'), AerSimulator(method='density_matrix'), AerSimulator(method='matrix_product_state'), EstimatorV2, SamplerV2, etc.",
+    "Qiskit + qiskit-aer のコードだけを渡すこと。AerSimulator(), AerSimulator(method='statevector'), AerSimulator(method='density_matrix'), AerSimulator(method='matrix_product_state'), EstimatorV2, SamplerV2 などを使う。",
 });
 
 const simulatePennyLaneTool = createSimulationTool({
@@ -285,7 +285,7 @@ const simulatePennyLaneTool = createSimulationTool({
   framework: "pennylane",
   simulator: "default.qubit / default.mixed / lightning.qubit",
   codeRule:
-    "Pass only PennyLane code. Use qml.device('default.qubit' / 'default.mixed' / 'lightning.qubit') and @qml.qnode.",
+    "PennyLane のコードだけを渡すこと。qml.device('default.qubit' / 'default.mixed' / 'lightning.qubit') と @qml.qnode を使う。",
 });
 
 const simulateCirqTool = createSimulationTool({
@@ -293,54 +293,54 @@ const simulateCirqTool = createSimulationTool({
   framework: "cirq",
   simulator: "cirq.Simulator / DensityMatrixSimulator / CliffordSimulator",
   codeRule:
-    "Pass only Cirq code. Use cirq.Circuit, cirq.LineQubit, cirq.Simulator / cirq.DensityMatrixSimulator / cirq.CliffordSimulator. Use CliffordSimulator only for Clifford circuits.",
+    "Cirq のコードだけを渡すこと。cirq.Circuit, cirq.LineQubit, cirq.Simulator / cirq.DensityMatrixSimulator / cirq.CliffordSimulator を使う。CliffordSimulator はClifford回路だけに使う。",
 });
 
 const verdictSchema = z.object({
   aligned: z
     .boolean()
-    .describe("Whether the user request, generated code, and result are aligned in algorithm, parameters, and outputs"),
-  confidence: z.enum(["high", "medium", "low"]).describe("Confidence in the verdict"),
+    .describe("ユーザー要望、生成コード、結果がアルゴリズム・パラメータ・出力の観点で整合しているか"),
+  confidence: z.enum(["high", "medium", "low"]).describe("判定への自信"),
   mismatches: z
     .array(
       z.object({
         aspect: z
           .string()
-          .describe("Mismatch aspect, e.g. bond_length, n_assets, algorithm_choice"),
-        expected: z.string().describe("What the user likely intended"),
-        actual: z.string().describe("What the code/result actually did"),
+          .describe("ズレている観点。例: bond_length, n_assets, algorithm_choice"),
+        expected: z.string().describe("ユーザーが意図したと思われる内容"),
+        actual: z.string().describe("コード/結果が実際に行った内容"),
       }),
     )
-    .describe("Concrete mismatches. Include minor mismatches even when aligned=true if useful"),
+    .describe("具体的なズレ。aligned=trueでも有用なら軽微なズレを含めてよい"),
   suggestions: z
     .array(z.string())
-    .describe("Fix suggestions when aligned=false. Use an empty array when aligned=true"),
-  summary: z.string().describe("A 1-2 sentence summary in English"),
+    .describe("aligned=falseの場合の修正案。aligned=trueなら空配列にする"),
+  summary: z.string().describe("1〜2文の日本語サマリー"),
 });
 
 function createVerifyIntentTool(profile: ModelProfile) {
   return tool({
   description: [
-    "Ask an independent critic LLM to judge whether the generated code/result matches the user request.",
-    "After the matching simulation tool returns ok=true, call this before the final answer.",
-    "If aligned=false, revise the code using the suggestions, simulate again, and verify again.",
+    "独立したcritic LLMに、生成コード/結果がユーザー要望と一致しているか判定させる。",
+    "対応するsimulation toolがok=trueを返した後、最終回答の前に呼ぶこと。",
+    "aligned=falseの場合はsuggestionsを参考にコードを修正し、再シミュレーションして再検証する。",
   ].join("\n"),
   inputSchema: z.object({
     userRequest: z
       .string()
-      .describe("Copy the user's original request exactly"),
+      .describe("ユーザーの元の要望をそのままコピーする"),
     interpretation: z
       .string()
-      .describe("Explain your interpretation of the request in 1-2 sentences"),
+      .describe("要望をどう解釈したか1〜2文で説明する"),
     plan: PlanSchema.describe(
-      "Pass the exact plan object accepted by request_plan",
+      "request_planで受理されたplanオブジェクトをそのまま渡す",
     ),
     generatedCode: z
       .string()
-      .describe("The exact full code passed to the matching simulation tool"),
+      .describe("対応するsimulation toolへ渡した実際のコード全文"),
     result: z
       .unknown()
-      .describe("The parsed result from the matching simulation tool"),
+      .describe("対応するsimulation toolのparsed結果"),
   }),
   execute: async ({
     userRequest,
@@ -358,31 +358,31 @@ function createVerifyIntentTool(profile: ModelProfile) {
         schema: verdictSchema,
         system: CRITIC_PROMPT,
         prompt: [
-          "## Original user request",
+          "## ユーザーの元の要望",
           userRequest,
           "",
-          "## Agent interpretation",
+          "## エージェントの解釈",
           interpretation,
           "",
-          "## Structured plan accepted by request_plan",
+          "## request_planで受理された構造化計画",
           "```json",
           JSON.stringify(plan, null, 2),
           "```",
           "",
-          "## Generated and executed code",
+          "## 生成・実行されたコード",
           "```python",
           generatedCode,
           "```",
           "",
-          "## Execution result (parsed)",
+          "## 実行結果 (parsed)",
           "```json",
           JSON.stringify(result, null, 2),
           "```",
           "",
-          "Judge alignment from these three perspectives:",
-          "1. userRequest vs plan alignment (interpretation errors)",
-          "2. plan vs generatedCode alignment (implementation errors)",
-          "3. whether result satisfies plan.success_criteria (result validity)",
+          "次の3観点で整合性を判定してください:",
+          "1. userRequest と plan の整合 (解釈ミス)",
+          "2. plan と generatedCode の整合 (実装ミス)",
+          "3. result が plan.success_criteria を満たしているか (結果の妥当性)",
         ].join("\n"),
       });
       console.log(
@@ -402,9 +402,9 @@ function createVerifyIntentTool(profile: ModelProfile) {
         confidence: "low" as const,
         mismatches: [],
         suggestions: [
-          `Critic call failed: ${err instanceof Error ? err.message : String(err)}. Proceed without validation or retry.`,
+          `critic呼び出しに失敗: ${err instanceof Error ? err.message : String(err)}。検証なしで進めるか、再試行してください。`,
         ],
-        summary: "The critic LLM call failed.",
+        summary: "critic LLM呼び出しに失敗しました。",
         durationMs: Date.now() - started,
       };
     }
@@ -416,27 +416,27 @@ const openQasmPreparationSchema = z.object({
   extractionCode: z
     .string()
     .min(1)
-    .describe("Python code dedicated to OpenQASM extraction that defines FINAL_CIRCUIT"),
+    .describe("FINAL_CIRCUITを定義するOpenQASM抽出専用Pythonコード"),
   notes: z
     .array(z.string())
-    .describe("Scope and limitations represented by the extraction code. Empty array if none"),
+    .describe("抽出コードが表現する範囲と制約。なければ空配列"),
 });
 
 const openQasmInputSchema = z.object({
   framework: z.enum(["qiskit", "pennylane", "cirq"]),
-  generatedCode: z.string().min(1).describe("Final executed and verified Python code"),
-  plan: PlanSchema.describe("Plan accepted by request_plan"),
-  result: z.unknown().describe("Parsed result from the simulation tool"),
+  generatedCode: z.string().min(1).describe("実行・検証済みの最終Pythonコード"),
+  plan: PlanSchema.describe("request_planで受理されたplan"),
+  result: z.unknown().describe("simulation toolのparsed結果"),
 });
 
 function createConvertToOpenQasmTool(profile: ModelProfile) {
   return tool({
   description: [
-    "Extract OpenQASM from the final executed and verified code.",
-    "Call this after verify_intent_alignment returns aligned=true and before the final answer.",
-    "Inside this tool, an LLM creates separate Python code dedicated to OpenQASM extraction.",
-    "The LLM must not write the OpenQASM string directly; official framework APIs produce it mechanically.",
-    "Do not simplify the main final code just to make OpenQASM conversion easier.",
+    "実行・検証済みの最終コードからOpenQASMを抽出する。",
+    "verify_intent_alignment が aligned=true を返した後、最終回答の前に呼ぶこと。",
+    "このtool内では、LLMがOpenQASM抽出専用の別Pythonコードを作る。",
+    "LLMはOpenQASM文字列を直接書いてはいけない。公式framework APIで機械的に生成する。",
+    "OpenQASM変換を簡単にするために、メインの最終コードを単純化してはいけない。",
   ].join("\n"),
   inputSchema: openQasmInputSchema,
   execute: async ({ framework, generatedCode, plan, result }) => {
@@ -449,15 +449,15 @@ function createConvertToOpenQasmTool(profile: ModelProfile) {
         modelId: profile.openQasmModelId,
         schema: openQasmPreparationSchema,
         system: [
-          "You are an engineer who writes OpenQASM extraction code from quantum programs.",
-          "Do not write the OpenQASM string directly. Write only Python code.",
-          "The goal is to define a circuit object named FINAL_CIRCUIT that can be mechanically converted to OpenQASM, separate from the original final code.",
-          "Do not simplify or replace the final code used to answer the user. Extract the main circuit, ansatz, or measurement circuit actually used.",
-          "For VQE/QAOA and similar workflows, classical optimization, Hamiltonians, and post-processing cannot be fully represented in OpenQASM. Extract only the quantum circuit portion and document limitations in notes.",
-          "The code must be standalone and must not print, use file I/O, or run pip install.",
-          "For Qiskit, FINAL_CIRCUIT must be a qiskit.QuantumCircuit.",
-          "For Cirq, FINAL_CIRCUIT must be a cirq.Circuit.",
-          "For PennyLane, FINAL_CIRCUIT must be a zero-argument qml.QNode.",
+          "あなたは量子プログラムからOpenQASM抽出コードを書くエンジニアです。",
+          "OpenQASM文字列を直接書かず、Pythonコードだけを書いてください。",
+          "目的は、元の最終コードとは別に、OpenQASMへ機械的に変換できる FINAL_CIRCUIT という回路オブジェクトを定義することです。",
+          "ユーザー回答に使った最終コードを単純化・置換してはいけません。実際に使った主要回路、ansatz、測定回路を抽出してください。",
+          "VQE/QAOAなどでは、古典最適化、Hamiltonian、後処理をOpenQASMで完全に表現できない場合があります。量子回路部分だけを抽出し、制約をnotesに書いてください。",
+          "コードはstandaloneにし、print、file I/O、pip installを使わないでください。",
+          "Qiskitでは FINAL_CIRCUIT は qiskit.QuantumCircuit である必要があります。",
+          "Cirqでは FINAL_CIRCUIT は cirq.Circuit である必要があります。",
+          "PennyLaneでは FINAL_CIRCUIT は引数なしの qml.QNode である必要があります。",
         ].join("\n"),
         prompt: [
           "## framework",
@@ -478,8 +478,8 @@ function createConvertToOpenQasmTool(profile: ModelProfile) {
           generatedCode,
           "```",
           "",
-          "Create OpenQASM extraction code separate from this final code.",
-          "You must define FINAL_CIRCUIT.",
+          "この最終コードとは別にOpenQASM抽出コードを作成してください。",
+          "必ず FINAL_CIRCUIT を定義してください。",
         ].join("\n"),
       });
 
@@ -542,7 +542,7 @@ function createConvertToOpenQasmTool(profile: ModelProfile) {
         openqasmError: err instanceof Error ? err.message : String(err),
         convertedFrameworkCodes: {},
         extractionCode: "",
-        notes: ["OpenQASM extraction code generation or execution failed."],
+        notes: ["OpenQASM抽出コードの生成または実行に失敗しました。"],
         stdout: "",
         stderr: "",
       };
