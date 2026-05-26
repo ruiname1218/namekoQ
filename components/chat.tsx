@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BlochSpherePanel } from "@/components/bloch-sphere";
 import { CircuitEditor } from "@/components/circuit-editor";
 import { LiquidMetalCard } from "@/components/ui/liquid-metal-card";
+import { LiquidMetal } from "@paper-design/shaders-react";
 
 const chatTransport = new DefaultChatTransport({ api: "/api/chat" });
 
@@ -139,6 +140,57 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
   },
 ];
 
+const BORDER_FADE_MS = 600;
+
+function ScreenBorderOverlay({ visible }: { visible: boolean }) {
+  // visible=false になったらフェードアウト後にアンマウントして WebGL を止める
+  const [mounted, setMounted] = useState(false);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      setFading(false);
+    } else if (mounted) {
+      setFading(true);
+      const t = setTimeout(() => {
+        setMounted(false);
+        setFading(false);
+      }, BORDER_FADE_MS);
+      return () => clearTimeout(t);
+    }
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!mounted) return null;
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-50 overflow-hidden"
+      style={{
+        opacity: fading ? 0 : 1,
+        transition: `opacity ${BORDER_FADE_MS}ms ease`,
+        WebkitMask:
+          "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+        WebkitMaskComposite: "xor",
+        maskComposite: "exclude",
+        padding: "3px",
+      }}
+    >
+      <LiquidMetal
+        className="absolute inset-0"
+        shape="none"
+        speed={0.42}
+        repetition={3}
+        softness={0.58}
+        shiftRed={0.16}
+        shiftBlue={0.38}
+        distortion={0.12}
+        scale={7}
+      />
+    </div>
+  );
+}
+
 export function Chat(_props: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -194,6 +246,8 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
   };
 
   return (
+    <>
+      <ScreenBorderOverlay visible={busy} />
     <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 items-start border-t border-[var(--border)] lg:grid-cols-[360px_minmax(0,1fr)]">
       <aside className="border-b border-[var(--border)] bg-white p-5 lg:sticky lg:top-4 lg:h-[calc(100vh-88px)] lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <form
@@ -245,7 +299,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     >
-                      <path d="M4 6l4 4 4-4" />
+                      <path d="M4 6l4 4 4 -4" />
                     </svg>
                   </span>
                 </label>
@@ -406,6 +460,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
         </div>
       </section>
     </div>
+    </>
   );
 }
 
