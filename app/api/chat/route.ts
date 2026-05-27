@@ -17,6 +17,8 @@ import { PlanSchema } from "@/lib/plan-schema";
 
 export const maxDuration = 300;
 
+const MAX_STEPS = 16;
+
 type ModelTier = "default" | "pro";
 
 interface ModelProfile {
@@ -320,12 +322,13 @@ const verdictSchema = z.object({
   summary: z.string().describe("A 1-2 sentence summary in English"),
 });
 
-function createVerifyIntentTool(profile: ModelProfile) {
+function createVerifyIntentTool(profile: ModelProfile, getStepsUsed: () => number) {
   return tool({
   description: [
     "Ask an independent critic LLM to judge whether the generated code/result matches the user request.",
     "After the matching simulation tool returns ok=true, call this before the final answer.",
     "If aligned=false, revise the code using the suggestions, simulate again, and verify again.",
+    "If aligned=true, call convert_to_openqasm next.",
   ].join("\n"),
   inputSchema: z.object({
     userRequest: z
@@ -387,14 +390,25 @@ function createVerifyIntentTool(profile: ModelProfile) {
           "3. whether result satisfies plan.success_criteria (result validity)",
         ].join("\n"),
       });
+      const stepsUsed = getStepsUsed();
+      const stepsRemaining = MAX_STEPS - stepsUsed;
       console.log(
-        "[verify_intent] aligned=%s confidence=%s mismatches=%d",
+        "[verify_intent] aligned=%s confidence=%s mismatches=%d steps_used=%d",
         verdict.aligned,
         verdict.confidence,
         (verdict.mismatches ?? []).length,
+        stepsUsed,
       );
+
+      const next = verdict.aligned
+        ? "aligned=true. Call convert_to_openqasm next, then give the final answer."
+        : stepsRemaining >= 3
+          ? `aligned=false. You MUST fix the code based on suggestions and call the simulation tool again, then verify again. Steps remaining: ${stepsRemaining}.`
+          : `aligned=false but only ${stepsRemaining} steps remain. Apply the most critical fix only, then proceed to convert_to_openqasm and give the final answer with caveats.`;
+
       return {
         ...verdict,
+        next,
         durationMs: Date.now() - started,
       };
     } catch (err) {
@@ -407,6 +421,7 @@ function createVerifyIntentTool(profile: ModelProfile) {
           `Critic call failed: ${err instanceof Error ? err.message : String(err)}. Proceed without validation or retry.`,
         ],
         summary: "The critic LLM call failed.",
+        next: "Critic call failed. Proceed to convert_to_openqasm and give the final answer.",
         durationMs: Date.now() - started,
       };
     }
@@ -760,6 +775,8 @@ export async function POST(req: Request) {
       modelProfile.modelId,
     );
 
+    let stepsUsed = 0;
+
     const result = streamText({
       model: selectLanguageModel(modelProfile, modelProfile.modelId),
       system: SYSTEM_PROMPT,
@@ -769,10 +786,25 @@ export async function POST(req: Request) {
         simulate_qiskit: simulateQiskitTool,
         simulate_pennylane: simulatePennyLaneTool,
         simulate_cirq: simulateCirqTool,
-        verify_intent_alignment: createVerifyIntentTool(modelProfile),
+        verify_intent_alignment: createVerifyIntentTool(modelProfile, () => stepsUsed),
         convert_to_openqasm: createConvertToOpenQasmTool(modelProfile),
       },
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(MAX_STEPS),
+      onStepFinish: ({ stepNumber, toolCalls, finishReason, usage }) => {
+        stepsUsed = stepNumber + 1;
+        const toolNames = toolCalls.map((c) => c.toolName).join(",") || "(none)";
+        const tokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
+        console.log(
+          "[step:%d] tools=[%s] finish=%s tokens=%d",
+          stepsUsed,
+          toolNames,
+          finishReason,
+          tokens,
+        );
+        if (stepsUsed >= MAX_STEPS - 1) {
+          console.warn("[chat] approaching step limit: %d/%d", stepsUsed, MAX_STEPS);
+        }
+      },
       onError: ({ error }) => {
         console.error("[chat] streamText error:", error);
       },
