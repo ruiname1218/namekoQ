@@ -98,3 +98,48 @@ pre {
 .fade-in {
   animation: fade-in 0.2s ease-out forwards;
 }
+
+@keyframes namekoq-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ターミナルカーソル */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.terminal-cursor {
+  display: inline-block;
+  width: 1.5px;
+  height: 0.85em;
+  background: var(--muted);
+  margin-left: 2px;
+  vertical-align: -0.05em;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* CRTスキャンライン */
+.crt-scanlines {
+  position: relative;
+}
+.crt-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgba(0, 0, 0, 0.022) 3px,
+    rgba(0, 0, 0, 0.022) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* オシロスコープ波形 */
+@keyframes oscillo-scroll {
+  from { transform: translateX(0px); }
+  to   { transform: translateX(-16px); }
+}

@@ -103,7 +103,7 @@ export function CircuitEditor({
     const gate = model.gates.find((item) => item.id === gateId);
     if (!gate) return;
     commit((circuit) => {
-      circuit.removeGate(gate.id);
+      circuit.removeGateAt(gate.column, gate.wires[0]);
       return placeGate(
         circuit,
         gate.name,
@@ -122,7 +122,7 @@ export function CircuitEditor({
     if (new Set(nextWires).size !== nextWires.length) return;
 
     commit((circuit) => {
-      circuit.removeGate(gate.id);
+      circuit.removeGateAt(gate.column, gate.wires[0]);
       return placeGateAtWires(
         circuit,
         gate.name,
@@ -137,13 +137,17 @@ export function CircuitEditor({
     const gate = model.gates.find((item) => item.id === gateId);
     if (!gate) return;
     commit((circuit) => {
-      circuit.removeGate(gate.id);
+      circuit.removeGateAt(gate.column, gate.wires[0]);
       return placeGateAtWires(circuit, gate.name, gate.column, gate.wires, options);
     });
   };
 
   const removeGate = (gateId: string) => {
-    commit((circuit) => circuit.removeGate(gateId));
+    const gate = model.gates.find((item) => item.id === gateId);
+    if (!gate) return;
+    // Use positional removal — gate IDs are re-generated on every QASM import,
+    // so the stored ID never matches the freshly-parsed circuit inside commit().
+    commit((circuit) => circuit.removeGateAt(gate.column, gate.wires[0]));
     setSelectedGateId(null);
   };
 
@@ -265,7 +269,7 @@ export function CircuitEditor({
                 ))}
 
                 {isRotationGate(selectedGate.name) && (
-                  <label className="flex flex-col gap-1">
+                  <label key={selectedGate.id} className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                       theta
                     </span>
@@ -380,16 +384,28 @@ export function CircuitEditor({
                       : null;
                     const selected = cell?.id === selectedGateId;
                     return (
-                      <div
+                      <DropCell
                         key={`${wire}-${column}`}
-                        onDragOver={(event) => event.preventDefault()}
+                        wire={wire}
+                        column={column}
+                        hasGate={!!cell}
                         onDrop={(event) => handleDrop(event, column, wire)}
-                        className={[
-                          "relative grid h-10 place-items-center border border-dashed border-[var(--border)] bg-[var(--surface)] transition",
-                          "before:absolute before:left-0 before:right-0 before:top-1/2 before:h-px before:bg-[var(--border-strong)] before:content-['']",
-                          cell ? "border-solid bg-white" : "hover:border-[var(--ink)]",
-                        ].join(" ")}
                       >
+                        {/* 2-qubit gate connector — extends into the row-gap above/below */}
+                        {gate && gate.wires.length > 1 && gate.wires.includes(wire - 1) && (
+                          <div
+                            aria-hidden="true"
+                            className="absolute left-1/2 z-10 w-px -translate-x-px bg-[var(--border-strong)]"
+                            style={{ bottom: "100%", height: "10px" }}
+                          />
+                        )}
+                        {gate && gate.wires.length > 1 && gate.wires.includes(wire + 1) && (
+                          <div
+                            aria-hidden="true"
+                            className="absolute left-1/2 z-10 w-px -translate-x-px bg-[var(--border-strong)]"
+                            style={{ top: "100%", height: "10px" }}
+                          />
+                        )}
                         {cell && gate && (
                           <button
                             type="button"
@@ -411,7 +427,7 @@ export function CircuitEditor({
                             {cellLabel(gate, cell)}
                           </button>
                         )}
-                      </div>
+                      </DropCell>
                     );
                   })}
                 </div>
@@ -425,6 +441,50 @@ export function CircuitEditor({
         </div>
       </div>
     </section>
+  );
+}
+
+function DropCell({
+  hasGate,
+  onDrop,
+  children,
+}: {
+  wire: number;
+  column: number;
+  hasGate: boolean;
+  onDrop: (event: React.DragEvent) => void;
+  children: React.ReactNode;
+}) {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  return (
+    <div
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (!isDragOver) setIsDragOver(true);
+      }}
+      onDragLeave={(event) => {
+        // Only clear when leaving the cell itself, not a child element
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+          setIsDragOver(false);
+        }
+      }}
+      onDrop={(event) => {
+        setIsDragOver(false);
+        onDrop(event);
+      }}
+      className={[
+        "relative grid h-10 place-items-center border transition",
+        "before:absolute before:left-0 before:right-0 before:top-1/2 before:h-px before:bg-[var(--border-strong)] before:content-['']",
+        isDragOver
+          ? "border-solid border-[var(--ink)] bg-[var(--surface-strong)]"
+          : hasGate
+          ? "border-solid border-[var(--border)] bg-white"
+          : "border-dashed border-[var(--border)] bg-[var(--surface)] hover:border-[var(--ink)]",
+      ].join(" ")}
+    >
+      {children}
+    </div>
   );
 }
 

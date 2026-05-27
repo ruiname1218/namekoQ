@@ -191,7 +191,7 @@ function ScreenBorderOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-export function Chat(_props: { examples: ExampleQuery[] }) {
+export function Chat({ examples }: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [modelTier, setModelTier] = useState<ModelTier>("default");
@@ -243,6 +243,21 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
       { body: { modelTier } },
     );
     setInput("");
+  };
+
+  const submitExample = (text: string) => {
+    if (busy) return;
+    sendMessage(
+      {
+        text: withAdvancedSettings(text, {
+          framework,
+          simulator,
+          shots,
+          maxIterations,
+        }),
+      },
+      { body: { modelTier } },
+    );
   };
 
   return (
@@ -438,11 +453,15 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
       <section className="flex min-w-0 flex-col bg-white">
         <div className="flex min-h-[46vh] flex-1 flex-col">
           {messages.length === 0 ? (
-            <EmptyState />
+            <EmptyState examples={examples} onExampleClick={submitExample} />
           ) : (
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 lg:p-8">
-              {messages.map((m) => (
-                <MessageView key={m.id} message={m} />
+              {messages.map((m, i) => (
+                <MessageView
+                  key={m.id}
+                  message={m}
+                  isLastStreaming={busy && i === messages.length - 1 && m.role === "assistant"}
+                />
               ))}
               {finalReport && <AnalysisReportPanel report={finalReport} />}
               {finalCode && (
@@ -466,7 +485,7 @@ export function Chat(_props: { examples: ExampleQuery[] }) {
 
 type UIMessage = ReturnType<typeof useChat>["messages"][number];
 
-function MessageView({ message }: { message: UIMessage }) {
+function MessageView({ message, isLastStreaming }: { message: UIMessage; isLastStreaming?: boolean }) {
   const isUser = message.role === "user";
   return (
     <article
@@ -489,7 +508,12 @@ function MessageView({ message }: { message: UIMessage }) {
       )}
       <div className="flex flex-col gap-3">
         {message.parts.map((part, i) => (
-          <PartView key={i} part={part} />
+          <PartView
+            key={i}
+            part={part}
+            isUser={isUser}
+            cursor={isLastStreaming && i === message.parts.length - 1}
+          />
         ))}
       </div>
     </article>
@@ -504,24 +528,84 @@ function PanelLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({
+  examples,
+  onExampleClick,
+}: {
+  examples: ExampleQuery[];
+  onExampleClick: (text: string) => void;
+}) {
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-20 text-center">
-      <div className="max-w-sm">
+    <div className="flex flex-1 flex-col items-center justify-center px-6 py-12">
+      <div className="w-full max-w-lg text-center">
         <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-sm border border-[var(--border)]">
-          <div className="h-3 w-3 rounded-full bg-[var(--surface-strong)]" />
+          <svg viewBox="0 0 32 32" className="h-8 w-8" fill="none" aria-hidden="true">
+            {/* 球の外周 */}
+            <circle cx="16" cy="16" r="9" stroke="#eeeeee" strokeWidth="0.8" />
+            {/* 赤道ベルト */}
+            <ellipse cx="16" cy="16" rx="9" ry="3.5" stroke="#e4e4e4" strokeWidth="0.8" />
+            {/* 子午線 */}
+            <ellipse cx="16" cy="16" rx="3.5" ry="9" stroke="#e8e8e8" strokeWidth="0.6" />
+            {/* 中心 */}
+            <circle cx="16" cy="16" r="1.2" fill="#cccccc" />
+            {/* 粒子A — 時計回り */}
+            <g>
+              <animateTransform attributeName="transform" type="rotate"
+                from="0 16 16" to="360 16 16" dur="3s" repeatCount="indefinite" />
+              <circle cx="16" cy="7" r="1.5" fill="#aaaaaa" />
+            </g>
+            {/* 粒子B — 反時計回り（常に対蹠点） */}
+            <g>
+              <animateTransform attributeName="transform" type="rotate"
+                from="0 16 16" to="-360 16 16" dur="3s" repeatCount="indefinite" />
+              <circle cx="16" cy="25" r="1.5" fill="#aaaaaa" />
+            </g>
+          </svg>
         </div>
-        <div className="text-base font-medium text-[var(--muted)]">
+        <p className="mb-8 text-base font-medium text-[var(--muted)]">
           量子計算を生成すると、ここに実行状況と結果が表示されます
-        </div>
+        </p>
+
+        {examples.length > 0 && (
+          <div className="grid gap-2 text-left sm:grid-cols-2">
+            {examples.map((example) => (
+              <button
+                key={example.text}
+                type="button"
+                onClick={() => onExampleClick(example.text)}
+                className="group rounded-sm border border-[var(--border)] bg-white px-4 py-3 text-left transition hover:border-[var(--ink)]"
+              >
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)] transition group-hover:text-[var(--fg)]">
+                  {example.domain}
+                </div>
+                <div className="text-sm leading-relaxed text-[var(--fg)]">
+                  {example.text}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function PartView({ part }: { part: UIMessage["parts"][number] }) {
+function PartView({
+  part,
+  isUser,
+  cursor,
+}: {
+  part: UIMessage["parts"][number];
+  isUser?: boolean;
+  cursor?: boolean;
+}) {
   if (part.type === "text") {
-    return <div className="whitespace-pre-wrap leading-relaxed">{part.text}</div>;
+    return (
+      <div className={isUser ? "whitespace-pre-wrap leading-relaxed" : ""}>
+        {isUser ? part.text : <MarkdownContent text={part.text} />}
+        {cursor && <span className="terminal-cursor" />}
+      </div>
+    );
   }
 
   if (part.type === "reasoning") {
@@ -538,6 +622,244 @@ function PartView({ part }: { part: UIMessage["parts"][number] }) {
   }
 
   return null;
+}
+
+type MarkdownBlock =
+  | { type: "heading"; level: number; text: string }
+  | { type: "paragraph"; lines: string[] }
+  | { type: "list"; items: string[] }
+  | { type: "code"; lang: string; code: string }
+  | { type: "table"; rows: string[][] }
+  | { type: "hr" };
+
+function MarkdownContent({ text }: { text: string }) {
+  const blocks = parseMarkdownBlocks(text);
+
+  return (
+    <div className="flex flex-col gap-3 leading-relaxed">
+      {blocks.map((block, index) => (
+        <MarkdownBlockView key={index} block={block} />
+      ))}
+    </div>
+  );
+}
+
+function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
+  if (block.type === "heading") {
+    const headingClass =
+      block.level <= 2
+        ? "mt-1 border-b border-[var(--border)] pb-2 text-base font-semibold text-[var(--fg)]"
+        : "mt-1 text-sm font-semibold text-[var(--fg)]";
+    return <div className={headingClass}>{renderInlineMarkdown(block.text)}</div>;
+  }
+
+  if (block.type === "paragraph") {
+    return (
+      <p className="whitespace-pre-wrap text-sm leading-7 text-[var(--fg)]">
+        {renderInlineMarkdown(block.lines.join("\n"))}
+      </p>
+    );
+  }
+
+  if (block.type === "list") {
+    return (
+      <ul className="flex list-disc flex-col gap-1 pl-5 text-sm leading-7 text-[var(--fg)]">
+        {block.items.map((item, index) => (
+          <li key={`${index}-${item.slice(0, 24)}`}>
+            {renderInlineMarkdown(item)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (block.type === "code") {
+    return (
+      <div className="overflow-hidden rounded-sm border border-[var(--border)] bg-[var(--code-bg)]">
+        {block.lang && (
+          <div className="border-b border-[var(--border)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+            {block.lang}
+          </div>
+        )}
+        <pre className="m-0 max-h-[460px] overflow-auto border-0 bg-transparent p-3 text-xs leading-relaxed">
+          <code>{block.code}</code>
+        </pre>
+      </div>
+    );
+  }
+
+  if (block.type === "table") {
+    const [head, ...body] = block.rows;
+    return (
+      <div className="overflow-x-auto rounded-sm border border-[var(--border)]">
+        <table className="w-full border-collapse text-sm">
+          {head && (
+            <thead className="bg-[var(--surface)]">
+              <tr>
+                {head.map((cell, index) => (
+                  <th
+                    key={`${index}-${cell}`}
+                    className="border-b border-[var(--border)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]"
+                  >
+                    {renderInlineMarkdown(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          )}
+          <tbody>
+            {body.map((row, rowIndex) => (
+              <tr key={rowIndex} className="border-b border-[var(--border)] last:border-b-0">
+                {row.map((cell, cellIndex) => (
+                  <td key={`${cellIndex}-${cell}`} className="px-3 py-2 align-top">
+                    {renderInlineMarkdown(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return <hr className="border-[var(--border)]" />;
+}
+
+function parseMarkdownBlocks(text: string): MarkdownBlock[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+
+    const fence = trimmed.match(/^```([A-Za-z0-9_-]*)\s*$/);
+    if (fence) {
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !(lines[i] ?? "").trim().startsWith("```")) {
+        code.push(lines[i] ?? "");
+        i++;
+      }
+      if (i < lines.length) i++;
+      blocks.push({ type: "code", lang: fence[1] ?? "", code: code.join("\n") });
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      blocks.push({
+        type: "heading",
+        level: heading[1].length,
+        text: heading[2].trim(),
+      });
+      i++;
+      continue;
+    }
+
+    if (/^---+$/.test(trimmed)) {
+      blocks.push({ type: "hr" });
+      i++;
+      continue;
+    }
+
+    if (isMarkdownTableLine(trimmed)) {
+      const tableLines: string[] = [];
+      while (i < lines.length && isMarkdownTableLine((lines[i] ?? "").trim())) {
+        tableLines.push((lines[i] ?? "").trim());
+        i++;
+      }
+      const rows = tableLines
+        .filter((item) => !isMarkdownTableSeparator(item))
+        .map((item) =>
+          item
+            .replace(/^\|/, "")
+            .replace(/\|$/, "")
+            .split("|")
+            .map((cell) => cell.trim()),
+        );
+      if (rows.length > 0) blocks.push({ type: "table", rows });
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test((lines[i] ?? "").trim())) {
+        items.push((lines[i] ?? "").trim().replace(/^[-*]\s+/, ""));
+        i++;
+      }
+      blocks.push({ type: "list", items });
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (i < lines.length) {
+      const next = lines[i] ?? "";
+      const nextTrimmed = next.trim();
+      if (
+        !nextTrimmed ||
+        /^```/.test(nextTrimmed) ||
+        /^(#{1,4})\s+/.test(nextTrimmed) ||
+        /^---+$/.test(nextTrimmed) ||
+        isMarkdownTableLine(nextTrimmed) ||
+        /^[-*]\s+/.test(nextTrimmed)
+      ) {
+        break;
+      }
+      paragraph.push(next);
+      i++;
+    }
+    if (paragraph.length > 0) blocks.push({ type: "paragraph", lines: paragraph });
+  }
+
+  return blocks;
+}
+
+function isMarkdownTableLine(line: string): boolean {
+  return line.startsWith("|") && line.endsWith("|") && line.includes("|", 1);
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line);
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text))) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    const token = match[0];
+    if (token.startsWith("**")) {
+      nodes.push(
+        <strong key={nodes.length} className="font-semibold">
+          {token.slice(2, -2)}
+        </strong>,
+      );
+    } else {
+      nodes.push(
+        <code
+          key={nodes.length}
+          className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-1 py-0.5 font-mono text-[0.92em]"
+        >
+          {token.slice(1, -1)}
+        </code>,
+      );
+    }
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
 }
 
 interface SimulateInput {
@@ -704,7 +1026,7 @@ function AgentProgress({
           </div>
         </div>
         <div className="flex items-center gap-2 font-mono text-xs text-[var(--muted)]">
-          {busy && <span className="progress-dot" />}
+          {busy && <OscilloscopeWave />}
           {busy ? "実行中" : `${doneCount}/${activity.length}`}
         </div>
       </div>
@@ -1034,20 +1356,22 @@ function FinalOutputPanel({
           />
         </div>
       </div>
-      <textarea
-        value={editedCode}
-        onChange={(e) => {
-          const nextCode = e.target.value;
-          setEditedCode(nextCode);
-          if (selectedFormat === "openqasm") setEditorOpenqasm(nextCode);
-          if (copyState !== "idle") setCopyState("idle");
-        }}
-        onBlur={() => {
-          if (selectedFormat === "openqasm") commitEditorOpenqasm(editedCode);
-        }}
-        spellCheck={false}
-        className="min-h-96 w-full resize-y border-0 bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
-      />
+      <div className="crt-scanlines">
+        <textarea
+          value={editedCode}
+          onChange={(e) => {
+            const nextCode = e.target.value;
+            setEditedCode(nextCode);
+            if (selectedFormat === "openqasm") setEditorOpenqasm(nextCode);
+            if (copyState !== "idle") setCopyState("idle");
+          }}
+          onBlur={() => {
+            if (selectedFormat === "openqasm") commitEditorOpenqasm(editedCode);
+          }}
+          spellCheck={false}
+          className="min-h-96 w-full resize-y border-0 bg-[var(--code-bg)] p-4 font-mono text-xs leading-relaxed outline-none"
+        />
+      </div>
       <DirectSimulationPanel
         code={directRunCode.code}
         source={directRunCode.source}
@@ -1400,62 +1724,110 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
     : [];
+  const maxCount = topCounts.reduce((max, [, value]) => Math.max(max, value), 0);
   const exportBaseName = createReportFilenameBase(report);
   const markdown = createReportMarkdown(report);
   const json = JSON.stringify(report, null, 2);
+  const detailedAnalysis = createReportDetailedAnalysis(report);
+  const frameworkLabel =
+    report.plan?.framework ?? report.simulation?.framework ?? "framework未指定";
+  const algorithmLabel = report.plan?.algorithm ?? "algorithm未指定";
+  const verificationLabel =
+    report.verification?.aligned == null
+      ? "未検証"
+      : report.verification.aligned
+      ? "整合"
+      : "要確認";
 
   return (
-    <section className="overflow-hidden rounded-sm border border-[var(--border-strong)] bg-white">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-            分析レポート
+    <section className="overflow-hidden rounded-md border border-[var(--border-strong)] bg-white shadow-[0_18px_45px_rgba(17,24,39,0.08)]">
+      <div className="border-b border-[var(--border)] bg-[linear-gradient(180deg,#ffffff_0%,#f7f7f7_100%)] px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-sm font-semibold uppercase tracking-[0.18em]">
+                分析レポート
+              </div>
+              <ReportStatusPill tone={report.verification?.aligned ? "ok" : "warn"}>
+                {verificationLabel}
+              </ReportStatusPill>
+            </div>
+            <div className="mt-2 text-xs leading-relaxed text-[var(--muted)]">
+              {report.createdAt} / 再現可能な実行サマリー
+            </div>
           </div>
-          <div className="mt-1 text-xs text-[var(--muted)]">
-            {report.createdAt} / 再現可能な実行サマリー
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                downloadText(`${exportBaseName}.md`, markdown, "text/markdown")
+              }
+              className="rounded-sm border border-[var(--border-strong)] bg-white px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] hover:bg-[var(--surface)]"
+            >
+              MD出力
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadText(`${exportBaseName}.json`, json, "application/json")
+              }
+              className="rounded-sm border border-[var(--border-strong)] bg-white px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] hover:bg-[var(--surface)]"
+            >
+              JSON出力
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              downloadText(`${exportBaseName}.md`, markdown, "text/markdown")
-            }
-            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
-          >
-            MD出力
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              downloadText(`${exportBaseName}.json`, json, "application/json")
-            }
-            className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)]"
-          >
-            JSON出力
-          </button>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-sm border border-[var(--border)] bg-white px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Framework
+            </div>
+            <div className="mt-1 truncate font-mono text-sm">{frameworkLabel}</div>
+          </div>
+          <div className="rounded-sm border border-[var(--border)] bg-white px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Algorithm
+            </div>
+            <div className="mt-1 truncate font-mono text-sm">{algorithmLabel}</div>
+          </div>
+          <div className="rounded-sm border border-[var(--border)] bg-white px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Artifacts
+            </div>
+            <div className="mt-1 font-mono text-sm">{report.artifacts.length}</div>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+      <div className="grid gap-4 bg-[#fbfbfb] p-4 sm:p-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.92fr)]">
         <div className="flex flex-col gap-4">
-          <section>
+          <ReportCard>
             <ReportHeading>概要</ReportHeading>
-            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-              {report.assistantSummary ??
-                "実行計画、シミュレーション結果、検証結果を以下にまとめます。"}
-            </div>
-          </section>
+            <MarkdownContent
+              text={
+                getReportOverviewText(report.assistantSummary) ??
+                "実行計画、シミュレーション結果、検証結果を以下にまとめます。"
+              }
+            />
+          </ReportCard>
 
-          <section>
+          {detailedAnalysis && (
+            <ReportCard>
+              <ReportHeading>詳しい分析</ReportHeading>
+              <MarkdownContent text={detailedAnalysis} />
+            </ReportCard>
+          )}
+
+          <ReportCard>
             <ReportHeading>問題設定</ReportHeading>
-            <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 text-sm leading-relaxed">
+            <div className="rounded-sm border border-[var(--border)] bg-white p-3 text-sm leading-relaxed shadow-[inset_3px_0_0_var(--ink)]">
               {report.userRequest}
             </div>
-          </section>
+          </ReportCard>
 
           {report.plan && (
-            <section>
+            <ReportCard>
               <ReportHeading>手法</ReportHeading>
               <div className="grid gap-2 sm:grid-cols-2">
                 <ReportField label="フレームワーク" value={report.plan.framework} />
@@ -1502,16 +1874,16 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                     </div>
                   </div>
                 )}
-            </section>
+            </ReportCard>
           )}
 
           {report.verification && (
-            <section>
+            <ReportCard>
               <ReportHeading>検証</ReportHeading>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-sm border border-[var(--ink)] px-2 py-1 text-xs font-medium">
+                <ReportStatusPill tone={report.verification.aligned ? "ok" : "warn"}>
                   {report.verification.aligned ? "整合" : "要確認"}
-                </span>
+                </ReportStatusPill>
                 {report.verification.confidence && (
                   <span className="text-xs text-[var(--muted)]">
                     信頼度: {report.verification.confidence}
@@ -1542,12 +1914,12 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                     ))}
                   </ul>
                 )}
-            </section>
+            </ReportCard>
           )}
         </div>
 
         <div className="flex flex-col gap-4">
-          <section>
+          <ReportCard>
             <ReportHeading>主要結果</ReportHeading>
             {resultItems.length > 0 ? (
               <div className="grid gap-2">
@@ -1564,47 +1936,49 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                 数値指標は検出されませんでした。
               </div>
             )}
-          </section>
+          </ReportCard>
 
           {topCounts.length > 0 && (
-            <section>
+            <ReportCard>
               <ReportHeading>上位測定結果</ReportHeading>
-              <div className="rounded-sm border border-[var(--border)]">
+              <div className="grid gap-2">
                 {topCounts.map(([state, value]) => (
-                  <div
+                  <ReportCountBar
                     key={state}
-                    className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm last:border-b-0"
-                  >
-                    <span className="font-mono">{state}</span>
-                    <span className="font-mono text-xs text-[var(--muted)]">
-                      {value}
-                    </span>
-                  </div>
+                    state={state}
+                    value={value}
+                    max={maxCount}
+                  />
                 ))}
               </div>
-            </section>
+            </ReportCard>
           )}
 
-          <section>
+          <ReportCard>
             <ReportHeading>成果物</ReportHeading>
             <div className="flex flex-wrap gap-2">
               {report.artifacts.map((artifact) => (
                 <span
                   key={artifact}
-                  className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs"
+                  className="rounded-sm border border-[var(--border)] bg-white px-2 py-1 text-xs shadow-sm"
                 >
                   {artifact}
                 </span>
               ))}
             </div>
-          </section>
+          </ReportCard>
 
           {report.openqasm && (
-            <section>
+            <ReportCard>
               <ReportHeading>OpenQASM</ReportHeading>
-              <div className="text-sm">
-                {report.openqasm.ok ? "抽出済み" : "抽出失敗または不完全"}
-                {report.openqasm.version ? ` / v${report.openqasm.version}` : ""}
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <ReportStatusPill tone={report.openqasm.ok ? "ok" : "warn"}>
+                  {report.openqasm.ok ? "抽出済み" : "利用不可"}
+                </ReportStatusPill>
+                <span className="text-[var(--muted)]">
+                  {report.openqasm.ok ? "回路表現を利用できます" : "抽出失敗または不完全"}
+                  {report.openqasm.version ? ` / v${report.openqasm.version}` : ""}
+                </span>
               </div>
               {report.openqasm.notes && report.openqasm.notes.length > 0 && (
                 <ul className="mt-2 flex list-disc flex-col gap-1 pl-4 text-xs text-[var(--muted)]">
@@ -1618,18 +1992,18 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                   {report.openqasm.error}
                 </div>
               )}
-            </section>
+            </ReportCard>
           )}
 
           {report.limitations.length > 0 && (
-            <section>
+            <ReportCard>
               <ReportHeading>制約</ReportHeading>
               <ul className="flex list-disc flex-col gap-1 pl-4 text-xs leading-relaxed text-[var(--muted)]">
                 {report.limitations.map((item, index) => (
                   <li key={`${index}-${item.slice(0, 32)}`}>{item}</li>
                 ))}
               </ul>
-            </section>
+            </ReportCard>
           )}
         </div>
       </div>
@@ -1637,9 +2011,18 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
   );
 }
 
+function ReportCard({ children }: { children: React.ReactNode }) {
+  return (
+    <section className="rounded-md border border-[var(--border)] bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.045)]">
+      {children}
+    </section>
+  );
+}
+
 function ReportHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+    <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+      <span className="h-px w-5 bg-[var(--border-strong)]" aria-hidden="true" />
       {children}
     </div>
   );
@@ -1668,11 +2051,61 @@ function ReportField({ label, value }: { label: string; value?: unknown }) {
 
 function ReportMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3">
-      <div className="truncate font-mono text-[11px] text-[var(--muted)]">
+    <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+      <div className="truncate font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--muted)]">
         {label}
       </div>
       <div className="mt-1 break-words text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function ReportStatusPill({
+  children,
+  tone,
+}: {
+  children: React.ReactNode;
+  tone: "ok" | "warn";
+}) {
+  return (
+    <span
+      className={[
+        "rounded-sm border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]",
+        tone === "ok"
+          ? "border-[#14813d] bg-[#eefaf2] text-[#116932]"
+          : "border-[#9a6a10] bg-[#fff8e8] text-[#73500d]",
+      ].join(" ")}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ReportCountBar({
+  state,
+  value,
+  max,
+}: {
+  state: string;
+  value: number;
+  max: number;
+}) {
+  const width = max > 0 ? Math.max(8, Math.round((value / max) * 100)) : 0;
+
+  return (
+    <div className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="min-w-0 truncate font-mono">{state}</span>
+        <span className="shrink-0 font-mono text-xs text-[var(--muted)]">
+          {formatNumber(value)}
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white">
+        <div
+          className="h-full rounded-full bg-[var(--ink)]"
+          style={{ width: `${width}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -1921,17 +2354,26 @@ function ResultVisualization({ result }: { result: unknown }) {
 }
 
 function CountsChart({ counts }: { counts: Record<string, number> }) {
+  const [collapsed, setCollapsed] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setCollapsed(false), 60);
+    return () => clearTimeout(t);
+  }, []);
+
   const entries = Object.entries(counts)
     .filter(([, value]) => typeof value === "number")
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
   const total = entries.reduce((sum, [, value]) => sum + value, 0);
   const max = Math.max(...entries.map(([, value]) => value), 1);
+  const equalWidth = `${(100 / Math.max(entries.length, 1)).toFixed(1)}%`;
 
   return (
     <div className="rounded-sm border border-[var(--border)]">
       {entries.map(([state, value]) => {
-        const width = `${Math.max(2, (value / max) * 100)}%`;
+        const finalWidth = `${Math.max(2, (value / max) * 100)}%`;
+        const width = collapsed ? equalWidth : finalWidth;
         const pct = total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
         return (
           <div
@@ -1940,7 +2382,13 @@ function CountsChart({ counts }: { counts: Record<string, number> }) {
           >
             <div className="font-mono text-sm">{state}</div>
             <div className="h-3 overflow-hidden rounded-full bg-[var(--surface-strong)]">
-              <div className="h-full bg-[var(--ink)]" style={{ width }} />
+              <div
+                className="h-full bg-[var(--ink)]"
+                style={{
+                  width,
+                  transition: collapsed ? "none" : "width 0.7s cubic-bezier(0.34, 1.4, 0.64, 1)",
+                }}
+              />
             </div>
             <div className="text-right font-mono text-xs text-[var(--muted)]">
               {value} / {pct}%
@@ -1949,6 +2397,35 @@ function CountsChart({ counts }: { counts: Record<string, number> }) {
         );
       })}
     </div>
+  );
+}
+
+function OscilloscopeWave() {
+  return (
+    <svg
+      width="32" height="10" viewBox="0 0 32 10"
+      style={{ overflow: "hidden", display: "inline-block", verticalAlign: "middle" }}
+      aria-hidden="true"
+    >
+      <g>
+        <animateTransform
+          attributeName="transform"
+          type="translate"
+          from="0,0"
+          to="-16,0"
+          dur="1.2s"
+          repeatCount="indefinite"
+        />
+        <path
+          d="M-16,5 C-14,5 -14,1.5 -12,1.5 C-10,1.5 -10,5 -8,5 C-6,5 -6,8.5 -4,8.5 C-2,8.5 -2,5 0,5 C2,5 2,1.5 4,1.5 C6,1.5 6,5 8,5 C10,5 10,8.5 12,8.5 C14,8.5 14,5 16,5 C18,5 18,1.5 20,1.5 C22,1.5 22,5 24,5 C26,5 26,8.5 28,8.5 C30,8.5 30,5 32,5 C34,5 34,1.5 36,1.5 C38,1.5 38,5 40,5 C42,5 42,8.5 44,8.5 C46,8.5 46,5 48,5"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    </svg>
   );
 }
 
@@ -1981,7 +2458,7 @@ function ToolCard({
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2 text-xs">
         <span className="font-mono text-[var(--fg)]">{getToolLabel(toolName)}</span>
         <span className="flex items-center gap-2 text-[var(--muted)]">
-          {active && <span className="progress-dot" />}
+          {active && <OscilloscopeWave />}
           {state}
           {durationMs ? ` / ${(durationMs / 1000).toFixed(1)}s` : ""}
         </span>
@@ -2525,6 +3002,168 @@ function stripAdvancedSettings(text: string): string {
   return text.split("\n\n追加設定:")[0]?.trim() ?? text.trim();
 }
 
+function getReportOverviewText(summary?: string): string | undefined {
+  if (!summary?.trim()) return undefined;
+
+  const lines = summary.replace(/\r\n/g, "\n").split("\n");
+  const overview: string[] = [];
+  let inCode = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (line.startsWith("```")) {
+      if (overview.length > 0) break;
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) continue;
+
+    if (/^---+$/.test(line)) {
+      if (overview.length > 0) break;
+      continue;
+    }
+
+    if (/^\|.*\|$/.test(line)) {
+      if (overview.length > 0) break;
+      continue;
+    }
+
+    if (/^#{2,4}\s+/.test(line)) {
+      if (overview.length > 0) break;
+      continue;
+    }
+
+    if (!line) {
+      if (overview.length > 0 && overview[overview.length - 1] !== "") {
+        overview.push("");
+      }
+      continue;
+    }
+
+    overview.push(rawLine);
+    if (overview.filter((item) => item.trim()).length >= 4) break;
+  }
+
+  const text = overview.join("\n").trim();
+  return text.length > 0 ? text : summary.trim();
+}
+
+function createReportDetailedAnalysis(report: AnalysisReport): string {
+  const narrative = getAssistantAnalysisText(report.assistantSummary);
+  const generatedInsights = createReportInsightLines(report);
+  const sections: string[] = [];
+
+  if (narrative) sections.push(narrative);
+  if (generatedInsights.length > 0) {
+    sections.push(
+      compactMarkdownLines([
+        "### 追加分析",
+        "",
+        ...generatedInsights.map((item) => `- ${item}`),
+      ]),
+    );
+  }
+
+  return sections.join("\n\n").trim();
+}
+
+function getAssistantAnalysisText(summary?: string): string | undefined {
+  if (!summary?.trim()) return undefined;
+
+  const lines = summary.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
+  let inCode = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (line.startsWith("```")) {
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) continue;
+
+    if (/^#{2,4}\s+.*OpenQASM/i.test(line)) break;
+    if (/^#{2,4}\s+.*成果物/.test(line)) break;
+    if (/^#{2,4}\s+.*コード/.test(line)) break;
+    if (/^---+$/.test(line)) break;
+
+    kept.push(rawLine);
+  }
+
+  const text = compactMarkdownLines(kept).trim();
+  return text.length > 0 ? text : undefined;
+}
+
+function createReportInsightLines(report: AnalysisReport): string[] {
+  const insights: string[] = [];
+  const counts = report.simulation?.parsed ? findCounts(report.simulation.parsed) : null;
+  const entries = counts
+    ? Object.entries(counts).sort((a, b) => b[1] - a[1])
+    : [];
+  const total = entries.reduce((sum, [, value]) => sum + value, 0);
+
+  if (report.plan?.problem_summary) {
+    insights.push(`問題設定: ${report.plan.problem_summary}`);
+  }
+  if (report.plan?.algorithm_rationale) {
+    insights.push(`手法選定: ${report.plan.algorithm_rationale}`);
+  }
+
+  if (entries.length > 0 && total > 0) {
+    const [topState, topValue] = entries[0];
+    const topPct = formatPercent(topValue / total);
+    const observedStates = entries.map(([state]) => state).join(", ");
+    insights.push(
+      `測定分布: ${formatNumber(total)} shots 中、最頻状態は \`${topState}\` の ${formatNumber(topValue)} 回（${topPct}）です。`,
+    );
+    insights.push(`観測された状態: ${observedStates}`);
+
+    if (entries.length === 2) {
+      const [, secondValue] = entries[1];
+      const gap = Math.abs(topValue - secondValue);
+      insights.push(
+        `上位2状態の差は ${formatNumber(gap)} 回（${formatPercent(gap / total)}）で、ほぼ均等な重ね合わせか、明確な偏りがあるかを確認できます。`,
+      );
+    } else if (entries.length > 2) {
+      const covered = entries.slice(0, 3).reduce((sum, [, value]) => sum + value, 0);
+      insights.push(
+        `上位3状態で全体の ${formatPercent(covered / total)} を占めています。残りの状態はノイズ、回路設計、または確率分布の広がりとして確認対象になります。`,
+      );
+    }
+  }
+
+  const resultItems = report.simulation?.parsed
+    ? extractReportResultItems(report.simulation.parsed)
+    : [];
+  if (resultItems.length > 0) {
+    insights.push(
+      `主要指標: ${resultItems
+        .slice(0, 5)
+        .map((item) => `${item.key}=${item.value}`)
+        .join(", ")}`,
+    );
+  }
+
+  if (report.verification?.summary) {
+    insights.push(`検証結果: ${report.verification.summary}`);
+  }
+  if (report.verification?.aligned === false) {
+    insights.push("要確認: critic が要望との不一致を検出しています。不一致項目と修正案を優先して確認してください。");
+  } else if (report.verification?.aligned === true) {
+    insights.push("整合性: critic は実行内容とユーザー要望がおおむね整合していると判定しています。");
+  }
+
+  if (report.openqasm?.ok) {
+    insights.push(
+      `再利用性: OpenQASM${report.openqasm.version ? ` ${report.openqasm.version}` : ""} を抽出済みなので、回路の再実行や他フレームワークへの移植に使えます。`,
+    );
+  }
+
+  return Array.from(new Set(insights));
+}
+
 function buildReportLimitations({
   simulationPart,
   verifyPart,
@@ -2607,6 +3246,7 @@ function createReportMarkdown(report: AnalysisReport): string {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
     : [];
+  const detailedAnalysis = createReportDetailedAnalysis(report);
 
   return compactMarkdownLines([
     `# ${report.title}`,
@@ -2624,7 +3264,17 @@ function createReportMarkdown(report: AnalysisReport): string {
     "",
     "## 概要",
     "",
-    report.assistantSummary ?? "最終サマリーは取得できませんでした。",
+    getReportOverviewText(report.assistantSummary) ??
+      "最終サマリーは取得できませんでした。",
+    "",
+    ...(detailedAnalysis
+      ? [
+          "## 詳しい分析",
+          "",
+          detailedAnalysis,
+          "",
+        ]
+      : []),
     "",
     "## ユーザー要望",
     "",
@@ -3116,6 +3766,14 @@ function formatNumber(value: number): string {
   }
   return value.toLocaleString("en-US", {
     maximumFractionDigits: 6,
+  });
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  return value.toLocaleString("ja-JP", {
+    maximumFractionDigits: 1,
+    style: "percent",
   });
 }
 
