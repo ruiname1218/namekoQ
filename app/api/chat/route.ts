@@ -311,9 +311,11 @@ const verdictSchema = z.object({
         actual: z.string().describe("What the code/result actually did"),
       }),
     )
-    .describe("Concrete mismatches. Include minor mismatches even when aligned=true if useful"),
+    .default([])
+    .describe("Concrete mismatches. Include minor mismatches even when aligned=true if useful. Use [] when there are none."),
   suggestions: z
     .array(z.string())
+    .default([])
     .describe("Fix suggestions when aligned=false. Use an empty array when aligned=true"),
   summary: z.string().describe("A 1-2 sentence summary in English"),
 });
@@ -389,7 +391,7 @@ function createVerifyIntentTool(profile: ModelProfile) {
         "[verify_intent] aligned=%s confidence=%s mismatches=%d",
         verdict.aligned,
         verdict.confidence,
-        verdict.mismatches.length,
+        (verdict.mismatches ?? []).length,
       );
       return {
         ...verdict,

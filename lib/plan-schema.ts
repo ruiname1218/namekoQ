@@ -7,7 +7,9 @@ export const SuccessCriteriaSchema = z.object({
   expected_range: z
     .object({ min: z.number(), max: z.number() })
     .optional()
-    .describe("Valid range for primary_metric; checked after execution"),
+    .describe(
+      "Valid numeric range for primary_metric. Only set for scalar numeric outputs (e.g. energy_Ha, fidelity, probability). Omit entirely for dict-type outputs such as counts.",
+    ),
   additional_notes: z
     .array(z.string())
     .optional()
