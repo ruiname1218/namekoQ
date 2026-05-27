@@ -30,6 +30,8 @@ declare module "quantum-circuit" {
       options?: GateOptions,
     ): string;
     removeGate(id: string): void;
+    /** Remove gate at the given column/wire position (stable across re-imports unlike ID-based removal). */
+    removeGateAt(column: number, wire: number): void;
     removeMeasurementAndClassicalControl(): void;
     insertColumn(colIndex?: number): void;
     appendQubits(numQubits: number): void;
