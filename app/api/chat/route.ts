@@ -17,7 +17,7 @@ import { PlanSchema } from "@/lib/plan-schema";
 
 export const maxDuration = 300;
 
-const MAX_STEPS = 16;
+const MAX_STEPS = 12;
 
 type ModelTier = "default" | "pro";
 
