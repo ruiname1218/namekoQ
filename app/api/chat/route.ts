@@ -320,7 +320,7 @@ const verdictSchema = z.object({
   summary: z.string().describe("1〜2文の日本語サマリー"),
 });
 
-function createVerifyIntentTool(profile: ModelProfile, getStepsUsed: () => number) {
+function createVerifyIntentTool(profile: ModelProfile, getStepsUsed: () => number) { // getStepsUsed: for logging only
   return tool({
   description: [
     "独立したcritic LLMに、生成コード/結果がユーザー要望と一致しているか判定させる。",
@@ -389,7 +389,6 @@ function createVerifyIntentTool(profile: ModelProfile, getStepsUsed: () => numbe
         ].join("\n"),
       });
       const stepsUsed = getStepsUsed();
-      const stepsRemaining = MAX_STEPS - stepsUsed;
       console.log(
         "[verify_intent] aligned=%s confidence=%s mismatches=%d steps_used=%d",
         verdict.aligned,
@@ -398,15 +397,8 @@ function createVerifyIntentTool(profile: ModelProfile, getStepsUsed: () => numbe
         stepsUsed,
       );
 
-      const next = verdict.aligned
-        ? "aligned=true. Call convert_to_openqasm next, then give the final answer."
-        : stepsRemaining >= 3
-          ? `aligned=false. You MUST fix the code based on suggestions and call the simulation tool again, then verify again. Steps remaining: ${stepsRemaining}.`
-          : `aligned=false but only ${stepsRemaining} steps remain. Apply the most critical fix only, then proceed to convert_to_openqasm and give the final answer with caveats.`;
-
       return {
         ...verdict,
-        next,
         durationMs: Date.now() - started,
       };
     } catch (err) {
@@ -419,7 +411,6 @@ function createVerifyIntentTool(profile: ModelProfile, getStepsUsed: () => numbe
           `critic呼び出しに失敗: ${err instanceof Error ? err.message : String(err)}。検証なしで進めるか、再試行してください。`,
         ],
         summary: "critic LLM呼び出しに失敗しました。",
-        next: "Critic call failed. Proceed to convert_to_openqasm and give the final answer.",
         durationMs: Date.now() - started,
       };
     }
