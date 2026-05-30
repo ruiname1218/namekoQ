@@ -97,7 +97,7 @@ Open `http://localhost:3000`.
 | `lib/critic-prompt.ts` | Intent-alignment critic instructions |
 | `lib/plan-schema.ts` | Structured planning schema |
 | `lib/quantum-templates.ts` | Reference Qiskit implementations embedded into the prompt |
-| `lib/run-qiskit.ts` | Python subprocess runner with timeout and output limits |
+| `lib/run-python-simulation.ts` | Python subprocess runner with timeout and output limits |
 
 ## Current Scope
 
