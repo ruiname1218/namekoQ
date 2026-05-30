@@ -40,8 +40,9 @@ RESULTS_DIR.mkdir(exist_ok=True)
 FRAMEWORKS = ["qiskit", "pennylane", "cirq"]
 FRAMEWORK_LABEL = {"qiskit": "Qiskit", "pennylane": "PennyLane", "cirq": "Cirq"}
 
-# QuanBench+ 論文準拠の KL 閾値
+# QuanBench+ 論文準拠の定数
 KL_THRESHOLD = 0.05
+SHOTS = 1000  # defaults.py の NUMBER_OF_SHOTS と一致させる
 
 
 # ── QuanBench+ データの読み込み ────────────────────────────────────────────────
@@ -114,8 +115,11 @@ def call_namekoq(
     return {"ok": False, "error": "max retries exceeded"}
 
 
-# QuanBench+ が GLOBAL_INPUTS として渡す評価用固定入力。
-# これがないと namekoQ が自分で値を決め、canonical_output との比較がずれる。
+# 全問に共通で追加する shots 指定（QuanBench+ defaults.py NUMBER_OF_SHOTS = 1000 に準拠）
+_SHOTS_DIRECTIVE = f"シミュレーション設定: shots = {SHOTS} で実行すること。"
+
+# QuanBench+ が GLOBAL_INPUTS として渡す評価用固定入力と、
+# 論文と構造を合わせるための関数シグネチャヒント。
 _SPECIAL_INPUT_DIRECTIVES: dict[str, str] = {
     "04": (
         "評価用固定入力:\n"
@@ -135,22 +139,60 @@ _SPECIAL_INPUT_DIRECTIVES: dict[str, str] = {
         "- alice = 1, bob = 0\n"
         "この入力値で回路を実行し、測定 counts を出力すること。"
     ),
+    # task 39-42 は関数シグネチャも渡す（パラメータ構造が canonical_output に直結するため）
     "39": (
+        "関数シグネチャ（参照）:\n"
+        "```python\n"
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit.circuit import ParameterVector\n"
+        "def quantum_state_preparation(parameters: ParameterVector) -> QuantumCircuit:\n"
+        "    # RX と RY ローテーションからなる 1-qubit ansatz を構築して返す\n"
+        "```\n"
         "評価用固定入力:\n"
         "- parameters = [(25 * math.pi) / 54, (25 * math.pi) / 54]（長さ 2）\n"
         "このパラメータで回路を実行し、測定 counts を出力すること。"
     ),
     "40": (
+        "関数シグネチャ（参照）:\n"
+        "```python\n"
+        "from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister\n"
+        "from qiskit.circuit.library import U3Gate\n"
+        "from qiskit.circuit import ParameterVector\n"
+        "import numpy as np\n"
+        "def VQE_2(parameters) -> QuantumCircuit:\n"
+        "    # parameters[0-2]: qubit 0 の RZ, RZ, RY\n"
+        "    # parameters[3]:   qubit 1 の RZ\n"
+        "    # parameters[4-6]: qubit 0 の RZ, RZ, RY\n"
+        "    # parameters[7]:   qubit 1 の RZ\n"
+        "```\n"
         "評価用固定入力:\n"
         "- parameters = [(25 * math.pi) / 54] * 8（長さ 8）\n"
         "このパラメータで回路を実行し、測定 counts を出力すること。"
     ),
     "41": (
+        "関数シグネチャ（参照）:\n"
+        "```python\n"
+        "import numpy as np\n"
+        "from qiskit.circuit import QuantumCircuit\n"
+        "from qiskit_aer.primitives import Estimator\n"
+        "from qiskit.primitives import StatevectorSampler as Sampler\n"
+        "from qiskit.quantum_info import SparsePauliOp\n"
+        "from scipy.optimize import minimize\n"
+        "def VQE_Z2(param) -> QuantumCircuit:\n"
+        "    # Z2 ハミルトニアンの最小固有値を VQE で求め、最適化後の ansatz 回路を返す\n"
+        "```\n"
         "評価用固定入力:\n"
-        "- param = [(25 * math.pi) / 54] * 8（長さ 8）\n"
-        "このパラメータで VQE を実行し、最終的な ansatz 回路に measure_all を付けて counts を出力すること。"
+        "- param = [(25 * math.pi) / 54] * 8（長さ 8、初期パラメータ）\n"
+        "VQE を実行し、最終 ansatz 回路に measure_all を付けて counts を出力すること。"
     ),
     "42": (
+        "関数シグネチャ（参照）:\n"
+        "```python\n"
+        "from qiskit import QuantumCircuit\n"
+        "import numpy as np\n"
+        "def U_gate_decompose(theta, phi, lam) -> QuantumCircuit:\n"
+        "    # U ゲートを RZ と SX のみで分解（global phase は無視）して回路を返す\n"
+        "```\n"
         "評価用固定入力:\n"
         "- theta = phi = lam = (25 * math.pi) / 54\n"
         "この角度で U ゲート分解を実行し、回路に measure_all を付けて counts を出力すること。"
@@ -162,14 +204,17 @@ def build_prompt(problem: dict, framework: str) -> str:
     """
     QuanBench+ の complete_prompt から自然言語説明を抽出し、
     namekoQ 向けプロンプトに変換する。
-    入力引数が必要なタスクには固定入力値を追記する。
+    - 全問: shots=1000 を指定（論文準拠）
+    - 特定タスク: 固定入力値 / 関数シグネチャを追記
     """
     description = extract_description(problem["complete_prompt"])
     task_id = problem.get("task_id", "")
+    parts = [description]
     directive = _SPECIAL_INPUT_DIRECTIVES.get(task_id)
     if directive:
-        return f"{description}\n\n{directive}"
-    return description
+        parts.append(directive)
+    parts.append(_SHOTS_DIRECTIVE)
+    return "\n\n".join(parts)
 
 
 # ── namekoQ 出力 → 確率ベクトル変換 ───────────────────────────────────────────
