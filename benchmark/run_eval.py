@@ -285,10 +285,12 @@ def evaluate_one(
 ) -> dict:
     task_id = problem["task_id"]
     record: dict = {
+        # ── 問題の識別情報 ──────────────────────────────
         "task_id": task_id,
         "framework": problem.get("framework", "unknown"),
         "category": problem.get("category", "unknown"),
         "entry_point": problem.get("entry_point"),
+        # ── 評価結果 ────────────────────────────────────
         "passed": False,
         "namekoq_ok": bool(namekoq_result.get("ok")),
         "verification_aligned": namekoq_result.get("verificationAligned"),
@@ -297,6 +299,9 @@ def evaluate_one(
         "step_count": namekoq_result.get("stepCount"),
         "duration_ms": namekoq_result.get("durationMs"),
         "error": namekoq_result.get("error"),
+        # ── 生成物（デバッグ・再現用） ─────────────────
+        "generated_code": namekoq_result.get("generatedCode"),
+        "openqasm": namekoq_result.get("openqasm"),
     }
 
     if not namekoq_result.get("ok") or not namekoq_result.get("generatedCode"):
