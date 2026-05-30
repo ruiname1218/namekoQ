@@ -238,6 +238,17 @@ def result_to_prob_vector(
     # counts → 確率ベクトル
     counts = sim_result.get("counts")
     if isinstance(counts, dict) and counts:
+        # QuanBench+ counts_to_array 準拠:
+        # 複数クラシックレジスタ時はスペース区切りの先頭部分のみ使用
+        # 値がネストした dict の場合は整数値のみ扱う
+        cleaned: dict[str, int] = {}
+        for k, v in counts.items():
+            if not isinstance(v, (int, float)):
+                continue
+            clean_key = str(k).split()[0]
+            cleaned[clean_key] = cleaned.get(clean_key, 0) + int(v)
+        counts = cleaned
+
         total = sum(counts.values())
         if total == 0:
             return None
@@ -391,6 +402,10 @@ def main() -> None:
     parser.add_argument(
         "--delay", type=float, default=2.0, help="問題間のウェイト秒数",
     )
+    parser.add_argument(
+        "--resume", default=None,
+        help="途中から再開する場合、既存の結果 JSON ファイルを指定",
+    )
     args = parser.parse_args()
 
     frameworks = FRAMEWORKS if args.framework == "all" else [args.framework]
@@ -412,19 +427,32 @@ def main() -> None:
         Path(args.output) if args.output else RESULTS_DIR / f"eval_{timestamp}.json"
     )
 
-    print(f"評価開始: {len(all_problems)} 問 | フレームワーク: {frameworks}")
+    # --resume: 既存結果を読み込み、完了済みをスキップ
+    results: list[dict] = []
+    done_keys: set[tuple[str, str]] = set()
+    if args.resume:
+        resume_path = Path(args.resume)
+        if resume_path.exists():
+            with open(resume_path, encoding="utf-8") as f:
+                existing = json.load(f)
+            results = existing.get("results", [])
+            done_keys = {(r["task_id"], r["framework"]) for r in results}
+            output_path = resume_path
+            print(f"再開: {len(results)} 問分の結果を読み込みました ({resume_path})")
+
+    pending = [p for p in all_problems if (p["task_id"], p["framework"]) not in done_keys]
+
+    print(f"評価開始: {len(pending)} 問 (全 {len(all_problems)} 問中) | フレームワーク: {frameworks}")
     print(f"namekoQ: {args.namekoq_url} | モデル: {args.model_tier}")
     print(f"結果保存先: {output_path}")
     print()
 
-    results: list[dict] = []
-
-    for idx, problem in enumerate(all_problems):
+    for idx, problem in enumerate(pending):
         fw = problem["framework"]
         task_id = problem["task_id"]
 
         print(
-            f"[{idx + 1:3d}/{len(all_problems)}] {fw:12s} task={task_id} [{problem.get('category','?')[:16]:16s}]",
+            f"[{len(results) + 1:3d}/{len(all_problems)}] {fw:12s} task={task_id} [{problem.get('category','?')[:16]:16s}]",
             end="  ",
             flush=True,
         )
