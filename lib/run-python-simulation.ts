@@ -12,15 +12,15 @@ export interface RunResult {
 }
 
 const MAX_OUTPUT_BYTES = 64 * 1024;
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 120_000;
 
 /**
- * Pythonインタプリタを子プロセスで起動し、渡されたQiskitコードを実行する。
+ * Pythonインタプリタを子プロセスで起動し、量子計算コードを実行する。
  * stdoutの最後のJSON-likeな行をparseして parsed に格納する。
  *
  * 注: PoCではホストのPythonを直接呼ぶ。本番ではVercel Sandboxに置換する。
  */
-export async function runQiskit(code: string): Promise<RunResult> {
+export async function runPythonSimulation(code: string): Promise<RunResult> {
   const started = Date.now();
   const dir = await mkdtemp(join(tmpdir(), "namekoq-"));
   const file = join(dir, "main.py");

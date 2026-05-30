@@ -72,7 +72,7 @@ export const PlanSchema = z.object({
     .int()
     .min(1)
     .max(120)
-    .describe("予想実行時間 (秒)。simulate_qiskit のタイムアウトは60秒"),
+    .describe("予想実行時間 (秒)。Pythonシミュレーションのタイムアウトは120秒"),
   success_criteria: SuccessCriteriaSchema.describe(
     "実行後に成功判定するための基準",
   ),
