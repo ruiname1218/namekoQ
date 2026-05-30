@@ -39,6 +39,29 @@ export const PlanParametersSchema = z.object({
     .describe("ドメイン固有の任意パラメータ (例: {molecule: 'H2', bond_length: 0.735, n_assets: 3})"),
 });
 
+export const ResearchValidationSchema = z.object({
+  assumptions: z
+    .array(z.string())
+    .min(1)
+    .describe("論文レベルの再現性に影響する前提・単純化・固定値"),
+  approximation_strategy: z
+    .string()
+    .min(5)
+    .describe("フルスケール問題を直接扱えない場合の縮小・近似・代理問題の方針"),
+  baseline_methods: z
+    .array(z.string())
+    .min(1)
+    .describe("結果比較に使う古典計算、厳密対角化、既知解、解析的 sanity check など"),
+  validation_checks: z
+    .array(z.string())
+    .min(1)
+    .describe("実行後に確認する収束性、物理量、制約充足、seed差などの検証項目"),
+  failure_modes: z
+    .array(z.string())
+    .min(1)
+    .describe("この実験で誤った結論につながり得る失敗モード"),
+});
+
 export const PlanSchema = z.object({
   domain: z
     .string()
@@ -82,6 +105,9 @@ export const PlanSchema = z.object({
     .describe(
       "Python print(dict) で出力する予定のキー一覧 (例: ['energy', 'params'])",
     ),
+  research_validation: ResearchValidationSchema.optional().describe(
+    "研究精度モードまたは論文レベル問題で必ず記入する検証プロトコル",
+  ),
 });
 
 export type Plan = z.infer<typeof PlanSchema>;

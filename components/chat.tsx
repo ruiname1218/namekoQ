@@ -16,6 +16,7 @@ interface ExampleQuery {
 }
 
 type ModelTier = "default" | "pro";
+type AccuracyMode = "standard" | "research";
 type QuantumFramework = "qiskit" | "pennylane" | "cirq";
 type FrameworkPreference = "auto" | QuantumFramework;
 type SimulatorPreference =
@@ -195,6 +196,8 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [modelTier, setModelTier] = useState<ModelTier>("default");
+  const [accuracyMode, setAccuracyMode] =
+    useState<AccuracyMode>("standard");
   const [framework, setFramework] = useState<FrameworkPreference>("auto");
   const [simulator, setSimulator] = useState<SimulatorPreference>("auto");
   const [shots, setShots] = useState("auto");
@@ -234,6 +237,7 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
     sendMessage(
       {
         text: withAdvancedSettings(currentText, {
+          accuracyMode,
           framework,
           simulator,
           shots,
@@ -250,6 +254,7 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
     sendMessage(
       {
         text: withAdvancedSettings(text, {
+          accuracyMode,
           framework,
           simulator,
           shots,
@@ -327,6 +332,26 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
               詳細設定
             </summary>
             <div className="flex flex-col gap-4 border-t border-[var(--border)] px-4 py-4">
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  精度モード
+                </span>
+                <select
+                  value={accuracyMode}
+                  onChange={(e) =>
+                    setAccuracyMode(e.target.value as AccuracyMode)
+                  }
+                  disabled={busy}
+                  className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)] disabled:opacity-60"
+                >
+                  <option value="standard">標準</option>
+                  <option value="research">研究精度</option>
+                </select>
+                <span className="text-xs leading-relaxed text-[var(--muted)]">
+                  研究精度では、前提・近似・ベースライン・検証項目を明示して実行します。
+                </span>
+              </label>
+
               <div className="flex flex-col gap-2">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                   フレームワーク
@@ -915,6 +940,13 @@ interface PlanShape {
     additional_notes?: string[];
   };
   expected_output_keys?: string[];
+  research_validation?: {
+    assumptions?: string[];
+    approximation_strategy?: string;
+    baseline_methods?: string[];
+    validation_checks?: string[];
+    failure_modes?: string[];
+  };
 }
 interface PlanOutput {
   plan?: PlanShape;
@@ -1878,6 +1910,14 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                     </div>
                   </div>
                 )}
+              {report.plan.research_validation && (
+                <div className="mt-3">
+                  <ReportSubheading>研究検証プロトコル</ReportSubheading>
+                  <pre className="!m-0 !max-h-72 !text-xs">
+                    {JSON.stringify(report.plan.research_validation, null, 2)}
+                  </pre>
+                </div>
+              )}
             </ReportCard>
           )}
 
@@ -2571,6 +2611,17 @@ function PlanToolPart({
           </details>
         )}
 
+        {plan?.research_validation && (
+          <details>
+            <summary className="cursor-pointer text-xs text-[var(--muted)] hover:text-[var(--fg)]">
+              研究検証プロトコル
+            </summary>
+            <pre className="!mt-1 !text-xs">
+              {JSON.stringify(plan.research_validation, null, 2)}
+            </pre>
+          </details>
+        )}
+
         {plan?.expected_output_keys && plan.expected_output_keys.length > 0 && (
           <div className="text-xs text-[var(--muted)]">
             <span>期待される出力キー: </span>
@@ -3114,6 +3165,16 @@ function createReportInsightLines(report: AnalysisReport): string[] {
   if (report.plan?.algorithm_rationale) {
     insights.push(`手法選定: ${report.plan.algorithm_rationale}`);
   }
+  if (report.plan?.research_validation?.approximation_strategy) {
+    insights.push(
+      `近似方針: ${report.plan.research_validation.approximation_strategy}`,
+    );
+  }
+  if (report.plan?.research_validation?.baseline_methods?.length) {
+    insights.push(
+      `ベースライン: ${report.plan.research_validation.baseline_methods.join(", ")}`,
+    );
+  }
 
   if (entries.length > 0 && total > 0) {
     const [topState, topValue] = entries[0];
@@ -3307,6 +3368,16 @@ function createReportMarkdown(report: AnalysisReport): string {
     JSON.stringify(report.plan?.parameters ?? {}, null, 2),
     "```",
     "",
+    ...(report.plan?.research_validation
+      ? [
+          "## 研究検証プロトコル",
+          "",
+          "```json",
+          JSON.stringify(report.plan.research_validation, null, 2),
+          "```",
+          "",
+        ]
+      : []),
     "## 主要結果",
     "",
     ...(resultItems.length > 0
@@ -3443,6 +3514,7 @@ function formatReportValue(value: unknown): string {
 function withAdvancedSettings(
   text: string,
   settings: {
+    accuracyMode: AccuracyMode;
     framework: FrameworkPreference;
     simulator: SimulatorPreference;
     shots: string;
@@ -3450,6 +3522,17 @@ function withAdvancedSettings(
   },
 ): string {
   const directives: string[] = [];
+
+  if (settings.accuracyMode === "research") {
+    directives.push(
+      "研究精度モードで実行する",
+      "request_plan の research_validation に assumptions / approximation_strategy / baseline_methods / validation_checks / failure_modes を必ず入れる",
+      "論文レベルのフルスケール再現が 16 qubit / 120秒制限で無理な場合は、縮小インスタンスまたはベンチマーク版として実行し、できない理由を明示する",
+      "可能な範囲で古典ベースライン、厳密対角化、小規模既知解、複数seed、収束履歴、制約充足などを検証する",
+      "結果dictには seed, assumptions, approximation_notes, validation_checks, baseline_comparison, convergence_trace を可能な限り含める",
+      "論文と同等の精度・再現性を確認できない場合は、その限界を最終回答で明示する",
+    );
+  }
 
   if (settings.framework !== "auto") {
     directives.push(
