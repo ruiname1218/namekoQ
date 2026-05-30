@@ -42,20 +42,31 @@ pip install -r requirements.txt
 PYTHON_BIN=/path/to/namekoQ/.venv/bin/python
 ```
 
-### 3. OpenAI API キーを設定
+### 3. LLM API キーを設定
+
+UIの「標準」モードは DeepSeek V4 Pro、「Pro」モードは GPT-5.5 を使います。
+
+**標準モード (DeepSeek)**
+
+```bash
+DEEPSEEK_API_KEY=sk-...
+# NAMEKOQ_DEEPSEEK_MODEL=deepseek-v4-pro  # 任意。デフォルトは deepseek-v4-pro
+```
+
+**Pro モード (OpenAI)**
 
 [OpenAI Platform](https://platform.openai.com/api-keys) でキーを発行し `.env.local` に記入:
 
 ```bash
 OPENAI_API_KEY=sk-...
-NAMEKOQ_MODEL=gpt-5.5   # 必要に応じてgpt-5やgpt-4oに変更
+# NAMEKOQ_MODEL=gpt-5.5  # 任意。デフォルトは gpt-5.5
 ```
 
 Vercelにデプロイする場合は CLI で同期できます:
 
 ```bash
 vercel link
-vercel env add OPENAI_API_KEY
+vercel env add DEEPSEEK_API_KEY
 vercel env pull .env.local
 ```
 
@@ -84,7 +95,7 @@ UIに以下を投げると、エージェントがコード生成 → 実行 →
 | `app/api/chat/route.ts` | `streamText` + plan/simulate/verify ツール定義 |
 | `lib/system-prompt.ts` | ドメイン専門家向け振る舞いの指示 |
 | `lib/quantum-templates.ts` | VQE/QAOA/Bell の参照Qiskit実装 |
-| `lib/run-qiskit.ts` | Python subprocess 実行 (タイムアウト/サイズ制限あり) |
+| `lib/run-python-simulation.ts` | Python subprocess 実行 (タイムアウト/サイズ制限あり) |
 
 ## リポジトリ分析
 
@@ -125,14 +136,14 @@ UIに以下を投げると、エージェントがコード生成 → 実行 →
 
 - Backend
   - `/api/chat` が AI SDK v6 の `streamText` と tool calling を使う
-  - モデルは `NAMEKOQ_MODEL`、critic は `NAMEKOQ_CRITIC_MODEL` で変更可能
-  - デフォルトモデルは `gpt-5.5`
-  - 最大10 step まで tool call を継続する
+  - 標準モードは DeepSeek V4 Pro (`DEEPSEEK_API_KEY`)、Pro モードは GPT-5.5 (`OPENAI_API_KEY`)
+  - メインモデルは `NAMEKOQ_MODEL` / `NAMEKOQ_DEEPSEEK_MODEL`、critic は `NAMEKOQ_CRITIC_MODEL` / `NAMEKOQ_DEEPSEEK_CRITIC_MODEL` で変更可能
+  - 最大12 step まで tool call を継続する
 
 - Quantum execution
   - `requirements.txt` では Qiskit / qiskit-aer / PennyLane / Cirq Core / NumPy / SciPy を要求する
   - 実行はローカル Python subprocess
-  - タイムアウトは60秒
+  - タイムアウトは120秒
   - stdout / stderr は最大64KBまで保持
   - 一時ディレクトリを作成してコードを書き込み、実行後に削除する
 
@@ -153,13 +164,8 @@ UIに以下を投げると、エージェントがコード生成 → 実行 →
 
 - 現在の Python 実行は安全なサンドボックスではなく、ローカル subprocess で任意 Python を実行する設計
   - 本番化するなら Vercel Sandbox、コンテナ、seccomp、ネットワーク遮断、ファイルシステム制限などが必要
-- `simulate_pennylane` / `simulate_cirq` も内部的には `runQiskit` という汎用 Python 実行関数を使っている
-  - 動作上は問題ないが、命名は実態とずれている
-- `PlanSchema.expected_runtime_sec` は最大120秒だが、実行タイムアウトは60秒
-  - LLM が120秒までの計画を立てられる一方、実行側は60秒で kill される
-- README では `app/page.tsx` を「例文ボタン+Chat」と説明しているが、現在の `Chat` コンポーネントは `examples` props を受け取るだけで UI に表示していない
-- 生成コード編集用 textarea と回路エディターは最終表示・コピー用の下書きで、編集後の再実行にはまだ接続されていない
-  - 回路編集後の OpenQASM と wrapper code は更新されるが、Python simulator の再実行はまだ行わない
+- 回路エディターで編集した OpenQASM から wrapper code を即時再生成するが、Python simulator の再実行はパネルの「実行」ボタンで手動トリガーする設計
+  - 回路変更のたびに自動実行するとリクエストが多発するため意図的にこの設計
 - H2 VQE テンプレートは 0.735 Å の係数を直接持つ PoC 実装
   - 任意 bond length の本格的な分子ハミルトニアン生成には PySCF / qiskit-nature 等の導入が必要
 - QAOA テンプレートは簡略版で、一般的な QUBO / Ising 変換や制約処理の厳密性は限定的
@@ -177,16 +183,11 @@ Qniverse は、量子回路ビルダー、複数SDK、HPC/GPU/FPGA/QPU バック
    - ローカル subprocess から隔離サンドボックスへ移す
    - 実行可能 import / ファイルアクセス / ネットワークを制限する
 2. framework 実行層を整理する
-   - `runQiskit` を `runPythonSimulation` などに改名する
    - framework ごとの依存チェックとエラー説明を分ける
-3. UI の未接続機能を接続する
-   - 生成コード編集後の再実行
-   - 回路エディターで更新した OpenQASM からの再実行
-   - `examples` props の表示
-4. 量子テンプレートを拡充する
+3. 量子テンプレートを拡充する
    - Qiskit / PennyLane / Cirq それぞれに同等テンプレートを持たせる
    - H2 以外の分子、Grover、QFT、QPE、Amplitude Estimation を追加する
-5. 検証を自動化する
+4. 検証を自動化する
    - Bell 状態、H2 VQE、簡易 QAOA のスモークテスト
    - API route の tool call 回帰テスト
    - 生成結果 JSON の schema validation
