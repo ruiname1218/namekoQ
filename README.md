@@ -77,6 +77,47 @@ npm run dev
 # → http://localhost:3000
 ```
 
+## ベンチマーク評価 (QuanBench+)
+
+[QuanBench+](https://arxiv.org/html/2604.08570v2) を使って namekoQ の精度を自動評価できます。
+Qiskit / PennyLane / Cirq の 42 問を採点し、Pass@1・KL Divergence を論文準拠で計測します。
+
+### セットアップ
+
+```bash
+bash benchmark/setup.sh
+```
+
+QuanBench+ リポジトリのクローンと Python 依存のインストールを行います。
+
+### 実行
+
+namekoQ を起動した状態で別ターミナルから実行します。
+
+```bash
+# GPT-5.5（Pro モード）で全フレームワーク・全問題
+python benchmark/run_eval.py --model-tier pro
+
+# DeepSeek V4 Pro（標準モード）で評価
+python benchmark/run_eval.py --model-tier default
+
+# 動作確認用（Qiskit のみ 5 問）
+python benchmark/run_eval.py --framework qiskit --limit 5
+
+# 結果ファイルを指定
+python benchmark/run_eval.py --model-tier pro --output benchmark/results/gpt55.json
+```
+
+結果は `benchmark/results/` に JSON 形式で保存されます（途中クラッシュ時も中間保存あり）。
+
+| オプション | 説明 |
+|---|---|
+| `--model-tier` | `pro`（GPT-5.5）または `default`（DeepSeek V4 Pro） |
+| `--framework` | `qiskit` / `pennylane` / `cirq` / `all`（デフォルト） |
+| `--limit` | テストする問題数の上限 |
+| `--namekoq-url` | namekoQ の URL（デフォルト: `http://localhost:3000`） |
+| `--delay` | 問題間のウェイト秒数（デフォルト: 2.0） |
+
 ## 使い方の例
 
 UIに以下を投げると、エージェントがコード生成 → 実行 → 解釈まで自動でやります:
