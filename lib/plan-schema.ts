@@ -74,7 +74,7 @@ export const PlanSchema = z.object({
     .int()
     .min(1)
     .max(120)
-    .describe("Expected runtime in seconds; the Python simulation timeout is 60 seconds"),
+    .describe("Expected runtime in seconds; the Python simulation timeout is 120 seconds"),
   success_criteria: SuccessCriteriaSchema.describe(
     "Criteria used to judge whether the run succeeded after execution",
   ),

@@ -1426,6 +1426,10 @@ function DirectSimulationPanel({
   const [result, setResult] = useState<DirectSimulationResult | null>(null);
   const [running, setRunning] = useState(false);
 
+  useEffect(() => {
+    setResult(null);
+  }, [code]);
+
   const run = async () => {
     if (!code.trim() || running) return;
     setRunning(true);

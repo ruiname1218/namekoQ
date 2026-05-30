@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runQiskit } from "@/lib/run-qiskit";
+import { runPythonSimulation } from "@/lib/run-python-simulation";
 
 export const maxDuration = 120;
 
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
   try {
     const body = SimulateRequestSchema.parse(await req.json());
-    const result = await runQiskit(body.code);
+    const result = await runPythonSimulation(body.code);
 
     return Response.json({
       ok: result.ok,

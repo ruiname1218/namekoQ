@@ -10,7 +10,7 @@ import {
   type UIMessage,
 } from "ai";
 import { z } from "zod";
-import { runQiskit } from "@/lib/run-qiskit";
+import { runPythonSimulation } from "@/lib/run-python-simulation";
 import { SYSTEM_PROMPT } from "@/lib/system-prompt";
 import { CRITIC_PROMPT } from "@/lib/critic-prompt";
 import { PlanSchema } from "@/lib/plan-schema";
@@ -254,7 +254,7 @@ function createSimulationTool({
     execute: async ({ code, purpose }) => {
       const started = Date.now();
       console.log("[%s] purpose=%s", name, purpose);
-      const result = await runQiskit(code);
+      const result = await runPythonSimulation(code);
       console.log(
         "[%s] ok=%s ms=%d stderr_len=%d",
         name,
@@ -495,7 +495,7 @@ function createConvertToOpenQasmTool(profile: ModelProfile) {
         prepared.extractionCode.trim() +
         "\n\n" +
         createOpenQasmPostlude(framework);
-      const run = await runQiskit(conversionCode);
+      const run = await runPythonSimulation(conversionCode);
       const parsed = isRecord(run.parsed) ? run.parsed : {};
       const openqasm =
         typeof parsed.openqasm === "string" ? parsed.openqasm : undefined;

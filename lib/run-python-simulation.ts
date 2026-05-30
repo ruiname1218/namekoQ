@@ -12,7 +12,7 @@ export interface RunResult {
 }
 
 const MAX_OUTPUT_BYTES = 64 * 1024;
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 120_000;
 
 /**
  * Runs the supplied Python quantum code in a child Python interpreter.
@@ -21,7 +21,7 @@ const TIMEOUT_MS = 60_000;
  * Note: this PoC directly calls the host Python runtime. Production usage should
  * replace this with an isolated sandbox such as Vercel Sandbox or a container.
  */
-export async function runQiskit(code: string): Promise<RunResult> {
+export async function runPythonSimulation(code: string): Promise<RunResult> {
   const started = Date.now();
   const dir = await mkdtemp(join(tmpdir(), "namekoq-"));
   const file = join(dir, "main.py");
