@@ -505,8 +505,8 @@ def main() -> None:
             candidate = evaluate_one(problem, namekoq_result, canonical)
 
             # 初回 or 今回の方が KL が小さければ採用
-            prev_kl = record.get("kl_divergence") if record else float("inf")
-            curr_kl = candidate.get("kl_divergence") if candidate.get("kl_divergence") is not None else float("inf")
+            prev_kl = record["kl_divergence"] if (record and record.get("kl_divergence") is not None) else float("inf")
+            curr_kl = candidate["kl_divergence"] if candidate.get("kl_divergence") is not None else float("inf")
             if record is None or curr_kl < prev_kl:
                 record = candidate
                 last_namekoq_result = namekoq_result
