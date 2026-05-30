@@ -206,3 +206,9 @@ Qniverse は、量子回路ビルダー、複数SDK、HPC/GPU/FPGA/QPU バック
 - Classiq — 高レベル仕様 → 自動回路合成
 - Kandala et al., Nature 549, 242 (2017) — Hardware-Efficient VQE for H2
 - Vercel AI SDK v6 + AI Gateway の Tool Calling パターン
+
+## 著者 (Author)
+
+- *ruiname1218* - [GitHub](https://github.com/ruiname1218)
+
+- *Reimangod* - [GitHub](https://github.com/Reimangod)
