@@ -114,14 +114,61 @@ def call_namekoq(
     return {"ok": False, "error": "max retries exceeded"}
 
 
+# QuanBench+ が GLOBAL_INPUTS として渡す評価用固定入力。
+# これがないと namekoQ が自分で値を決め、canonical_output との比較がずれる。
+_SPECIAL_INPUT_DIRECTIVES: dict[str, str] = {
+    "04": (
+        "評価用固定入力:\n"
+        "- グラフ G の edges: [[0,3],[0,4],[1,3],[1,4],[2,3],[2,4]] (networkx.Graph で構築)\n"
+        "- beta  = [(25 * math.pi) / 54] * 5\n"
+        "- gamma = [(25 * math.pi) / 54] * 5\n"
+        "これらの引数でコードを実行し、測定 counts を出力すること。"
+    ),
+    "06": (
+        "評価用固定入力:\n"
+        "- unknown_state は 1-qubit 回路で H → Rz((25*pi)/54) を適用したもの\n"
+        "  qc = QuantumCircuit(1); qc.h(0); qc.rz((25 * math.pi) / 54, 0)\n"
+        "この入力状態に対して SWAP test を実行し、アンシラ qubit の測定 counts を出力すること。"
+    ),
+    "29": (
+        "評価用固定入力:\n"
+        "- alice = 1, bob = 0\n"
+        "この入力値で回路を実行し、測定 counts を出力すること。"
+    ),
+    "39": (
+        "評価用固定入力:\n"
+        "- parameters = [(25 * math.pi) / 54, (25 * math.pi) / 54]（長さ 2）\n"
+        "このパラメータで回路を実行し、測定 counts を出力すること。"
+    ),
+    "40": (
+        "評価用固定入力:\n"
+        "- parameters = [(25 * math.pi) / 54] * 8（長さ 8）\n"
+        "このパラメータで回路を実行し、測定 counts を出力すること。"
+    ),
+    "41": (
+        "評価用固定入力:\n"
+        "- param = [(25 * math.pi) / 54] * 8（長さ 8）\n"
+        "このパラメータで VQE を実行し、最終的な ansatz 回路に measure_all を付けて counts を出力すること。"
+    ),
+    "42": (
+        "評価用固定入力:\n"
+        "- theta = phi = lam = (25 * math.pi) / 54\n"
+        "この角度で U ゲート分解を実行し、回路に measure_all を付けて counts を出力すること。"
+    ),
+}
+
+
 def build_prompt(problem: dict, framework: str) -> str:
     """
     QuanBench+ の complete_prompt から自然言語説明を抽出し、
     namekoQ 向けプロンプトに変換する。
-    フレームワーク指定はプロンプト内に既に含まれているが、
-    /api/eval の framework パラメータでも明示的に指定する。
+    入力引数が必要なタスクには固定入力値を追記する。
     """
     description = extract_description(problem["complete_prompt"])
+    task_id = problem.get("task_id", "")
+    directive = _SPECIAL_INPUT_DIRECTIVES.get(task_id)
+    if directive:
+        return f"{description}\n\n{directive}"
     return description
 
 
