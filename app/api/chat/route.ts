@@ -6,7 +6,9 @@ import {
   stepCountIs,
   streamText,
   tool,
+  type FileUIPart,
   type LanguageModel,
+  type TextUIPart,
   type UIMessage,
 } from "ai";
 import { z } from "zod";
@@ -18,6 +20,8 @@ import { PlanSchema } from "@/lib/plan-schema";
 export const maxDuration = 300;
 
 const MAX_STEPS = 12;
+const MAX_INLINE_FILE_CHARS = 80_000;
+const MAX_TOTAL_INLINE_FILE_CHARS = 180_000;
 
 type ModelTier = "default" | "pro";
 
@@ -202,23 +206,28 @@ function schemaDescription(schema: z.ZodType<unknown>): string {
 
 const requestPlanTool = tool({
   description: [
-    "ユーザー要望から量子計算の実行計画を構造化して提出する。",
-    "simulate_qiskit / simulate_pennylane / simulate_cirq の前に必ず最初に呼ぶこと。",
+    "ユーザー要望から汎用研究計画を構造化して提出する。",
+    "文献調査、数式確認、データ解析、量子シミュレーション、論文再現、実験設計のいずれでも最初に呼ぶこと。",
+    "量子計算を実行する場合は framework / algorithm / qubits_estimate も必ず埋め、simulate_qiskit / simulate_pennylane / simulate_cirq の前に呼ぶこと。",
     "Zod schemaで型、enum、単位、範囲を確認する。validationに失敗した場合はtool callを修正して再提出する。",
     "意味的な妥当性は後段の verify_intent_alignment で確認する。",
   ].join("\n"),
   inputSchema: PlanSchema,
   execute: async (plan) => {
     console.log(
-      "[request_plan] domain=%s framework=%s algo=%s qubits=%d",
+      "[request_plan] task=%s domain=%s framework=%s algo=%s qubits=%s",
+      plan.task_type,
       plan.domain,
-      plan.framework,
-      plan.algorithm,
-      plan.qubits_estimate,
+      plan.framework ?? "-",
+      plan.algorithm ?? "-",
+      plan.qubits_estimate ?? "-",
     );
     return {
       plan,
-      next: "計画を受理しました。このplanに沿って選択されたframeworkのPythonコードを書き、対応するsimulation toolを呼んでください。",
+      next:
+        plan.task_type === "quantum_simulation" || plan.framework
+          ? "計画を受理しました。このplanに沿って選択されたframeworkのPythonコードを書き、対応するsimulation toolを呼んでください。"
+          : "計画を受理しました。このplanに沿って、根拠・検証方針・限界を明示した研究回答を作成してください。",
     };
   },
 });
@@ -748,15 +757,204 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function normalizeMessagesForModel(messages: UIMessage[]): UIMessage[] {
+  let remainingInlineChars = MAX_TOTAL_INLINE_FILE_CHARS;
+
+  return messages.map((message) => {
+    if (message.role !== "user") return message;
+
+    const parts = message.parts.flatMap((part): UIMessage["parts"] => {
+      if (part.type !== "file") return [part];
+
+      const filePart = withInferredMediaType(part as FileUIPart);
+      if (isModelNativeFileMediaType(filePart.mediaType)) {
+        return [filePart as UIMessage["parts"][number]];
+      }
+
+      const converted = filePartToTextPart(filePart, remainingInlineChars);
+      remainingInlineChars = Math.max(
+        0,
+        remainingInlineChars - converted.usedChars,
+      );
+      return [converted.part as UIMessage["parts"][number]];
+    });
+
+    return { ...message, parts };
+  });
+}
+
+function hasModelNativeFileAttachment(messages: UIMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      message.role === "user" &&
+      message.parts.some(
+        (part) =>
+          part.type === "file" &&
+          isModelNativeFileMediaType(
+            withInferredMediaType(part as FileUIPart).mediaType,
+          ),
+      ),
+  );
+}
+
+function withInferredMediaType(part: FileUIPart): FileUIPart {
+  if (part.mediaType) return part;
+  return {
+    ...part,
+    mediaType: inferMediaTypeFromFilename(part.filename),
+  };
+}
+
+function isModelNativeFileMediaType(mediaType: string): boolean {
+  return mediaType.startsWith("image/") || mediaType === "application/pdf";
+}
+
+function filePartToTextPart(
+  part: FileUIPart,
+  remainingInlineChars: number,
+): { part: TextUIPart; usedChars: number } {
+  const filename = printableFilename(part.filename ?? "attachment");
+  const header = `添付ファイル: ${filename} (${part.mediaType})`;
+
+  if (!isTextLikeAttachment(part)) {
+    return {
+      part: {
+        type: "text",
+        text: [
+          header,
+          "このファイル形式は本文を直接展開できないため、ファイル名とメディアタイプのみを参照してください。",
+        ].join("\n"),
+      },
+      usedChars: 0,
+    };
+  }
+
+  if (remainingInlineChars <= 0) {
+    return {
+      part: {
+        type: "text",
+        text: [
+          header,
+          "添付ファイル本文は合計サイズ上限に達したため省略しました。",
+        ].join("\n"),
+      },
+      usedChars: 0,
+    };
+  }
+
+  const text = decodeFilePartText(part);
+  if (text == null) {
+    return {
+      part: {
+        type: "text",
+        text: [
+          header,
+          "添付ファイル本文をデコードできなかったため、ファイル名とメディアタイプのみを参照してください。",
+        ].join("\n"),
+      },
+      usedChars: 0,
+    };
+  }
+
+  const limit = Math.min(MAX_INLINE_FILE_CHARS, remainingInlineChars);
+  const snippet = text.slice(0, limit);
+  const truncated = snippet.length < text.length;
+  const fence = snippet.includes("```") ? "````" : "```";
+  const extension = filename.includes(".")
+    ? filename.split(".").pop()?.toLowerCase()
+    : "text";
+
+  return {
+    part: {
+      type: "text",
+      text: [
+        header,
+        `本文${truncated ? "（長いため途中まで）" : ""}:`,
+        `${fence}${extension ?? "text"}`,
+        snippet,
+        fence,
+      ].join("\n"),
+    },
+    usedChars: snippet.length,
+  };
+}
+
+function isTextLikeAttachment(part: FileUIPart): boolean {
+  if (part.mediaType.startsWith("text/")) return true;
+  return [
+    "application/json",
+    "application/x-ipynb+json",
+    "application/x-jsonlines",
+  ].includes(part.mediaType);
+}
+
+function decodeFilePartText(part: FileUIPart): string | null {
+  if (!part.url.startsWith("data:")) return null;
+
+  const commaIndex = part.url.indexOf(",");
+  if (commaIndex < 0) return null;
+
+  const metadata = part.url.slice(5, commaIndex);
+  const payload = part.url.slice(commaIndex + 1);
+
+  try {
+    const buffer = /;base64/i.test(metadata)
+      ? Buffer.from(payload, "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf8");
+    return buffer.toString("utf8").replace(/\u0000/g, "");
+  } catch {
+    return null;
+  }
+}
+
+function inferMediaTypeFromFilename(filename?: string): string {
+  const extension = (filename?.split(".").pop() ?? "").toLowerCase();
+  const known: Record<string, string> = {
+    cjs: "text/javascript",
+    csv: "text/csv",
+    ipynb: "application/x-ipynb+json",
+    js: "text/javascript",
+    json: "application/json",
+    jsonl: "application/x-jsonlines",
+    jsx: "text/javascript",
+    md: "text/markdown",
+    mjs: "text/javascript",
+    openqasm: "text/x-openqasm",
+    pdf: "application/pdf",
+    py: "text/x-python",
+    qasm: "text/x-openqasm",
+    qasm2: "text/x-openqasm",
+    ts: "text/typescript",
+    tsx: "text/typescript",
+    txt: "text/plain",
+  };
+  if (known[extension]) return known[extension];
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "png") return "image/png";
+  if (extension === "gif") return "image/gif";
+  if (extension === "webp") return "image/webp";
+  if (extension === "svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function printableFilename(filename: string): string {
+  return filename.replace(/[\r\n]+/g, " ").slice(0, 160);
+}
+
 export async function POST(req: Request) {
   try {
     const {
       messages,
       modelTier: rawModelTier,
     }: { messages: UIMessage[]; modelTier?: unknown } = await req.json();
-    const modelTier = parseModelTier(rawModelTier);
+    const requestedModelTier = parseModelTier(rawModelTier);
+    const modelTier: ModelTier = hasModelNativeFileAttachment(messages)
+      ? "pro"
+      : requestedModelTier;
     const modelProfile = resolveModelProfile(modelTier);
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = await convertToModelMessages(
+      normalizeMessagesForModel(messages),
+    );
 
     console.log(
       "[chat] model_tier=%s provider_model=%s",

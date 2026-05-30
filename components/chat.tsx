@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type FileUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BlochSpherePanel } from "@/components/bloch-sphere";
 import { CircuitEditor } from "@/components/circuit-editor";
@@ -15,7 +15,7 @@ interface ExampleQuery {
   text: string;
 }
 
-type ModelTier = "default" | "pro";
+type RunMode = "default" | "pro" | "research";
 type AccuracyMode = "standard" | "research";
 type QuantumFramework = "qiskit" | "pennylane" | "cirq";
 type FrameworkPreference = "auto" | QuantumFramework;
@@ -142,6 +142,29 @@ const SIMULATOR_OPTIONS: SimulatorOption[] = [
 ];
 
 const BORDER_FADE_MS = 600;
+const MAX_ATTACHMENTS = 6;
+const MAX_TOTAL_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const ATTACHMENT_ACCEPT =
+  "image/*,.pdf,.txt,.md,.csv,.json,.jsonl,.py,.ipynb,.qasm,.qasm2,.openqasm,.ts,.tsx,.js,.jsx,.mjs,.cjs";
+const FALLBACK_MEDIA_TYPES: Record<string, string> = {
+  cjs: "text/javascript",
+  csv: "text/csv",
+  ipynb: "application/x-ipynb+json",
+  js: "text/javascript",
+  json: "application/json",
+  jsonl: "application/x-jsonlines",
+  jsx: "text/javascript",
+  md: "text/markdown",
+  mjs: "text/javascript",
+  openqasm: "text/x-openqasm",
+  pdf: "application/pdf",
+  py: "text/x-python",
+  qasm: "text/x-openqasm",
+  qasm2: "text/x-openqasm",
+  ts: "text/typescript",
+  tsx: "text/typescript",
+  txt: "text/plain",
+};
 
 function ScreenBorderOverlay({ visible }: { visible: boolean }) {
   // visible=false になったらフェードアウト後にアンマウントして WebGL を止める
@@ -195,13 +218,14 @@ function ScreenBorderOverlay({ visible }: { visible: boolean }) {
 export function Chat({ examples }: { examples: ExampleQuery[] }) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [modelTier, setModelTier] = useState<ModelTier>("default");
-  const [accuracyMode, setAccuracyMode] =
-    useState<AccuracyMode>("standard");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [runMode, setRunMode] = useState<RunMode>("default");
   const [framework, setFramework] = useState<FrameworkPreference>("auto");
   const [simulator, setSimulator] = useState<SimulatorPreference>("auto");
   const [shots, setShots] = useState("auto");
   const [maxIterations, setMaxIterations] = useState("auto");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
   const { messages, sendMessage, status, error } = useChat({
     transport: chatTransport,
   });
@@ -224,6 +248,9 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
     () => getSimulatorOptions(framework),
     [framework],
   );
+  const modelTier = runMode === "default" ? "default" : "pro";
+  const accuracyMode: AccuracyMode =
+    runMode === "research" ? "research" : "standard";
 
   useEffect(() => {
     if (!simulatorOptions.some((option) => option.id === simulator)) {
@@ -231,22 +258,75 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
     }
   }, [simulator, simulatorOptions]);
 
-  const submit = (text: string) => {
+  const clearSelectedFiles = () => {
+    setSelectedFiles([]);
+    setFileError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const addSelectedFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    setSelectedFiles((current) => {
+      const next = dedupeFiles([...current, ...Array.from(files)]);
+      if (next.length > MAX_ATTACHMENTS) {
+        setFileError(`添付は最大 ${MAX_ATTACHMENTS} 件までです。`);
+        return next.slice(0, MAX_ATTACHMENTS);
+      }
+
+      const totalBytes = next.reduce((sum, file) => sum + file.size, 0);
+      if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+        setFileError(
+          `添付の合計は ${formatFileSize(MAX_TOTAL_ATTACHMENT_BYTES)} までです。`,
+        );
+        return current;
+      }
+
+      setFileError(null);
+      return next;
+    });
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles((current) => current.filter((_, i) => i !== index));
+    setFileError(null);
+  };
+
+  const submit = async (text: string) => {
     const currentText = inputRef.current?.value ?? text;
-    if (!currentText.trim() || busy) return;
-    sendMessage(
-      {
-        text: withAdvancedSettings(currentText, {
-          accuracyMode,
-          framework,
-          simulator,
-          shots,
-          maxIterations,
-        }),
-      },
-      { body: { modelTier } },
-    );
-    setInput("");
+    const files = selectedFiles;
+    if ((!currentText.trim() && files.length === 0) || busy) return;
+
+    try {
+      const fileParts =
+        files.length > 0
+          ? await Promise.all(files.map((file) => fileToUIPart(file)))
+          : undefined;
+      const baseText =
+        currentText.trim() || "添付ファイルを解析してください。";
+      await sendMessage(
+        {
+          text: withAttachmentContext(
+            withAdvancedSettings(baseText, {
+              accuracyMode,
+              framework,
+              simulator,
+              shots,
+              maxIterations,
+            }),
+            files,
+          ),
+          ...(fileParts?.length ? { files: fileParts } : {}),
+        },
+        { body: { modelTier } },
+      );
+      setInput("");
+      clearSelectedFiles();
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const submitExample = (text: string) => {
@@ -273,14 +353,14 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            submit(inputRef.current?.value ?? input);
+            void submit(inputRef.current?.value ?? input);
           }}
           className="flex h-full flex-col gap-5"
         >
           <section>
             <PanelLabel>リクエスト</PanelLabel>
             <p className="text-sm leading-relaxed text-[var(--muted)]">
-              量子計算で解きたい内容をそのまま入力してください。
+              研究・解析・量子計算で扱いたい内容をそのまま入力してください。
             </p>
           </section>
 
@@ -290,21 +370,22 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="量子計算で解きたい内容を入力..."
+                placeholder="研究・解析・量子計算で扱いたい内容を入力..."
                 disabled={busy}
                 className="min-h-52 flex-1 resize-none rounded-sm border border-[var(--border)] bg-[var(--surface)] p-4 pb-12 text-base leading-relaxed outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--ink)] disabled:opacity-60"
               />
               <div className="absolute bottom-3 right-4 flex items-center">
                 <label className="relative inline-flex items-center">
                   <select
-                    aria-label="モデルモード"
-                    value={modelTier}
-                    onChange={(e) => setModelTier(e.target.value as ModelTier)}
+                    aria-label="実行モード"
+                    value={runMode}
+                    onChange={(e) => setRunMode(e.target.value as RunMode)}
                     disabled={busy}
                     className="appearance-none border-0 bg-transparent py-1 pl-0 pr-7 text-lg font-medium text-[#8d8d8d] outline-none transition hover:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <option value="default">標準</option>
-                    <option value="pro">Pro</option>
+                    <option value="pro">プロ</option>
+                    <option value="research">研究</option>
                   </select>
                   <span
                     aria-hidden="true"
@@ -325,6 +406,54 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
                 </label>
               </div>
             </div>
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  className="rounded-sm border border-[var(--border-strong)] px-3 py-2 text-xs font-medium transition hover:border-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  添付
+                </button>
+                {selectedFiles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearSelectedFiles}
+                    disabled={busy}
+                    className="text-xs text-[var(--muted)] transition hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    クリア
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  multiple
+                  onChange={(event) => addSelectedFiles(event.currentTarget.files)}
+                  className="hidden"
+                />
+              </div>
+
+              {selectedFiles.length > 0 && (
+                <div className="grid gap-2">
+                  {selectedFiles.map((file, index) => (
+                    <SelectedFileItem
+                      key={`${file.name}-${file.size}-${file.lastModified}`}
+                      file={file}
+                      onRemove={() => removeSelectedFile(index)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {fileError && (
+                <div className="text-xs leading-relaxed text-[var(--muted)]">
+                  {fileError}
+                </div>
+              )}
+            </div>
           </section>
 
           <details className="rounded-sm border border-[var(--border)] bg-white">
@@ -332,26 +461,6 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
               詳細設定
             </summary>
             <div className="flex flex-col gap-4 border-t border-[var(--border)] px-4 py-4">
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  精度モード
-                </span>
-                <select
-                  value={accuracyMode}
-                  onChange={(e) =>
-                    setAccuracyMode(e.target.value as AccuracyMode)
-                  }
-                  disabled={busy}
-                  className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--ink)] disabled:opacity-60"
-                >
-                  <option value="standard">標準</option>
-                  <option value="research">研究精度</option>
-                </select>
-                <span className="text-xs leading-relaxed text-[var(--muted)]">
-                  研究精度では、前提・近似・ベースライン・検証項目を明示して実行します。
-                </span>
-              </label>
-
               <div className="flex flex-col gap-2">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                   フレームワーク
@@ -460,7 +569,7 @@ export function Chat({ examples }: { examples: ExampleQuery[] }) {
 
           <button
             type="button"
-            onClick={() => submit(inputRef.current?.value ?? input)}
+            onClick={() => void submit(inputRef.current?.value ?? input)}
             disabled={busy}
             className="rounded-sm bg-[var(--ink)] px-5 py-4 text-base font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-35"
           >
@@ -642,11 +751,88 @@ function PartView({
     );
   }
 
+  if (part.type === "file") {
+    return <FilePartView part={part as FileUIPart} />;
+  }
+
   if (part.type.startsWith("tool-")) {
     return <ToolPart part={part} />;
   }
 
   return null;
+}
+
+function SelectedFileItem({
+  file,
+  onRemove,
+}: {
+  file: File;
+  onRemove: () => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!inferMediaType(file).startsWith("image/")) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-sm border border-[var(--border)] bg-white p-2">
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt=""
+          className="h-10 w-10 rounded-sm border border-[var(--border)] object-cover"
+        />
+      ) : (
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-sm border border-[var(--border)] bg-[var(--surface)] font-mono text-[10px] text-[var(--muted)]">
+          {fileExtensionLabel(file.name)}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs font-medium">{file.name}</div>
+        <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--muted)]">
+          {inferMediaType(file)} / {formatFileSize(file.size)}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="shrink-0 rounded-sm border border-[var(--border)] px-2 py-1 text-[10px] font-medium text-[var(--muted)] transition hover:border-[var(--ink)] hover:text-[var(--fg)]"
+      >
+        削除
+      </button>
+    </div>
+  );
+}
+
+function FilePartView({ part }: { part: FileUIPart }) {
+  const isImage = part.mediaType.startsWith("image/");
+
+  return (
+    <div className="overflow-hidden rounded-sm border border-[var(--border)] bg-[var(--surface)]">
+      {isImage && (
+        <img
+          src={part.url}
+          alt={part.filename ?? "添付画像"}
+          className="max-h-72 w-full object-contain bg-white"
+        />
+      )}
+      <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+        <span className="min-w-0 truncate font-medium">
+          {part.filename ?? "添付ファイル"}
+        </span>
+        <span className="shrink-0 font-mono text-[var(--muted)]">
+          {part.mediaType}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 type MarkdownBlock =
@@ -925,11 +1111,34 @@ interface OpenQasmOutput {
   durationMs?: number;
 }
 interface PlanShape {
+  task_type?:
+    | "literature_review"
+    | "derivation_check"
+    | "data_analysis"
+    | "quantum_simulation"
+    | "paper_reproduction"
+    | "experiment_design"
+    | "general_research"
+    | "other";
+  research_question?: string;
   domain?: string;
   framework?: "qiskit" | "pennylane" | "cirq";
   algorithm?: string;
   problem_summary?: string;
   algorithm_rationale?: string;
+  sources_used?: Array<{
+    id?: string;
+    type?: string;
+    title?: string;
+    locator?: string;
+    relevance?: string;
+  }>;
+  method?: {
+    approach?: string;
+    steps?: string[];
+    tools_or_models?: string[];
+    deliverables?: string[];
+  };
   qubits_estimate?: number;
   expected_runtime_sec?: number;
   parameters?: Record<string, unknown>;
@@ -940,6 +1149,14 @@ interface PlanShape {
     additional_notes?: string[];
   };
   expected_output_keys?: string[];
+  validation_plan?: {
+    required_evidence?: string[];
+    checks?: string[];
+    reproducibility?: string[];
+    uncertainty_analysis?: string[];
+  };
+  uncertainty?: string[];
+  limitations?: string[];
   research_validation?: {
     assumptions?: string[];
     approximation_strategy?: string;
@@ -1866,6 +2083,18 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
             <ReportCard>
               <ReportHeading>手法</ReportHeading>
               <div className="grid gap-2 sm:grid-cols-2">
+                <ReportField
+                  label="タスク種別"
+                  value={
+                    report.plan.task_type
+                      ? getTaskTypeLabel(report.plan.task_type)
+                      : undefined
+                  }
+                />
+                <ReportField
+                  label="研究質問"
+                  value={report.plan.research_question}
+                />
                 <ReportField label="フレームワーク" value={report.plan.framework} />
                 <ReportField label="アルゴリズム" value={report.plan.algorithm} />
                 <ReportField
@@ -1895,6 +2124,30 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                   {report.plan.algorithm_rationale}
                 </p>
               )}
+              {report.plan.method && (
+                <div className="mt-3">
+                  <ReportSubheading>研究方法</ReportSubheading>
+                  <pre className="!m-0 !max-h-72 !text-xs">
+                    {JSON.stringify(report.plan.method, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {report.plan.sources_used?.length ? (
+                <div className="mt-3">
+                  <ReportSubheading>参照ソース</ReportSubheading>
+                  <pre className="!m-0 !max-h-72 !text-xs">
+                    {JSON.stringify(report.plan.sources_used, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
+              {report.plan.validation_plan && (
+                <div className="mt-3">
+                  <ReportSubheading>検証計画</ReportSubheading>
+                  <pre className="!m-0 !max-h-72 !text-xs">
+                    {JSON.stringify(report.plan.validation_plan, null, 2)}
+                  </pre>
+                </div>
+              )}
               {report.plan.parameters &&
                 Object.keys(report.plan.parameters).length > 0 && (
                   <div className="mt-3">
@@ -1910,6 +2163,26 @@ function AnalysisReportPanel({ report }: { report: AnalysisReport }) {
                     </div>
                   </div>
                 )}
+              {hasNonEmptyList(report.plan.uncertainty) && (
+                <div className="mt-3">
+                  <ReportSubheading>不確実性</ReportSubheading>
+                  <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-[var(--muted)]">
+                    {report.plan.uncertainty?.map((item, index) => (
+                      <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {hasNonEmptyList(report.plan.limitations) && (
+                <div className="mt-3">
+                  <ReportSubheading>制約</ReportSubheading>
+                  <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-[var(--muted)]">
+                    {report.plan.limitations?.map((item, index) => (
+                      <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {report.plan.research_validation && (
                 <div className="mt-3">
                   <ReportSubheading>研究検証プロトコル</ReportSubheading>
@@ -2538,6 +2811,11 @@ function PlanToolPart({
           <span className="rounded-sm border border-[var(--ink)] px-2 py-0.5 text-xs font-medium">
             {plan ? "計画済み" : "計画中"}
           </span>
+          {plan?.task_type && (
+            <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs">
+              {getTaskTypeLabel(plan.task_type)}
+            </span>
+          )}
           {plan?.algorithm && (
             <span className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 font-mono text-xs">
               {plan.algorithm}
@@ -2565,6 +2843,13 @@ function PlanToolPart({
           )}
         </div>
 
+        {plan?.research_question && (
+          <div className="text-sm">
+            <span className="text-[var(--muted)]">研究質問: </span>
+            {plan.research_question}
+          </div>
+        )}
+
         {plan?.problem_summary && (
           <div className="text-sm">
             <span className="text-[var(--muted)]">タスク: </span>
@@ -2576,6 +2861,13 @@ function PlanToolPart({
           <div className="text-xs leading-relaxed text-[var(--muted)]">
             <span>選定理由: </span>
             {plan.algorithm_rationale}
+          </div>
+        )}
+
+        {plan?.method?.approach && (
+          <div className="text-xs leading-relaxed text-[var(--muted)]">
+            <span>方法: </span>
+            {plan.method.approach}
           </div>
         )}
 
@@ -2607,6 +2899,47 @@ function PlanToolPart({
             </summary>
             <pre className="!mt-1 !text-xs">
               {JSON.stringify(plan.success_criteria, null, 2)}
+            </pre>
+          </details>
+        )}
+
+        {plan?.sources_used && plan.sources_used.length > 0 && (
+          <details>
+            <summary className="cursor-pointer text-xs text-[var(--muted)] hover:text-[var(--fg)]">
+              参照ソース
+            </summary>
+            <pre className="!mt-1 !text-xs">
+              {JSON.stringify(plan.sources_used, null, 2)}
+            </pre>
+          </details>
+        )}
+
+        {plan?.validation_plan && (
+          <details>
+            <summary className="cursor-pointer text-xs text-[var(--muted)] hover:text-[var(--fg)]">
+              検証計画
+            </summary>
+            <pre className="!mt-1 !text-xs">
+              {JSON.stringify(plan.validation_plan, null, 2)}
+            </pre>
+          </details>
+        )}
+
+        {(hasNonEmptyList(plan?.uncertainty) ||
+          hasNonEmptyList(plan?.limitations)) && (
+          <details>
+            <summary className="cursor-pointer text-xs text-[var(--muted)] hover:text-[var(--fg)]">
+              不確実性と制約
+            </summary>
+            <pre className="!mt-1 !text-xs">
+              {JSON.stringify(
+                {
+                  uncertainty: plan?.uncertainty ?? [],
+                  limitations: plan?.limitations ?? [],
+                },
+                null,
+                2,
+              )}
             </pre>
           </details>
         )}
@@ -2643,6 +2976,10 @@ function formatParamValue(v: unknown): string {
   if (v == null) return "-";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+function hasNonEmptyList(items?: string[]): boolean {
+  return Array.isArray(items) && items.some((item) => item.trim().length > 0);
 }
 
 function VerifyToolPart({
@@ -2764,7 +3101,7 @@ function getActivity(messages: UIMessage[], busy: boolean): ActivityStep[] {
     {
       id: "request_plan",
       title: "計画",
-      detail: "要望を量子計算の実行計画に変換",
+      detail: "要望を研究計画に変換",
       state: "waiting",
     },
     {
@@ -3162,6 +3499,17 @@ function createReportInsightLines(report: AnalysisReport): string[] {
   if (report.plan?.problem_summary) {
     insights.push(`問題設定: ${report.plan.problem_summary}`);
   }
+  if (report.plan?.research_question) {
+    insights.push(`研究質問: ${report.plan.research_question}`);
+  }
+  if (report.plan?.method?.approach) {
+    insights.push(`研究方法: ${report.plan.method.approach}`);
+  }
+  if (report.plan?.validation_plan?.checks?.length) {
+    insights.push(
+      `検証計画: ${report.plan.validation_plan.checks.slice(0, 3).join(", ")}`,
+    );
+  }
   if (report.plan?.algorithm_rationale) {
     insights.push(`手法選定: ${report.plan.algorithm_rationale}`);
   }
@@ -3317,6 +3665,9 @@ function createReportMarkdown(report: AnalysisReport): string {
     `# ${report.title}`,
     "",
     `- 作成日時: ${report.createdAt}`,
+    `- タスク種別: ${
+      report.plan?.task_type ? getTaskTypeLabel(report.plan.task_type) : "-"
+    }`,
     `- フレームワーク: ${report.plan?.framework ?? report.simulation?.framework ?? "-"}`,
     `- アルゴリズム: ${report.plan?.algorithm ?? "-"}`,
     `- 検証: ${
@@ -3347,6 +3698,7 @@ function createReportMarkdown(report: AnalysisReport): string {
     "",
     "## 手法",
     "",
+    `- 研究質問: ${report.plan?.research_question ?? "-"}`,
     `- ドメイン: ${report.plan?.domain ?? "-"}`,
     `- フレームワーク: ${report.plan?.framework ?? "-"}`,
     `- アルゴリズム: ${report.plan?.algorithm ?? "-"}`,
@@ -3362,12 +3714,60 @@ function createReportMarkdown(report: AnalysisReport): string {
       ? `選定理由: ${report.plan.algorithm_rationale}`
       : "",
     "",
+    ...(report.plan?.method
+      ? [
+          "## 研究方法",
+          "",
+          "```json",
+          JSON.stringify(report.plan.method, null, 2),
+          "```",
+          "",
+        ]
+      : []),
+    ...(report.plan?.sources_used?.length
+      ? [
+          "## 参照ソース",
+          "",
+          "```json",
+          JSON.stringify(report.plan.sources_used, null, 2),
+          "```",
+          "",
+        ]
+      : []),
     "## パラメータ",
     "",
     "```json",
     JSON.stringify(report.plan?.parameters ?? {}, null, 2),
     "```",
     "",
+    ...(report.plan?.validation_plan
+      ? [
+          "## 検証計画",
+          "",
+          "```json",
+          JSON.stringify(report.plan.validation_plan, null, 2),
+          "```",
+          "",
+        ]
+      : []),
+    ...(hasNonEmptyList(report.plan?.uncertainty) ||
+    hasNonEmptyList(report.plan?.limitations)
+      ? [
+          "## 不確実性と制約",
+          "",
+          "```json",
+          JSON.stringify(
+            {
+              uncertainty: report.plan?.uncertainty ?? [],
+              limitations: report.plan?.limitations ?? [],
+            },
+            null,
+            2,
+          ),
+          "```",
+          "",
+        ]
+      : []),
     ...(report.plan?.research_validation
       ? [
           "## 研究検証プロトコル",
@@ -3526,6 +3926,7 @@ function withAdvancedSettings(
   if (settings.accuracyMode === "research") {
     directives.push(
       "研究精度モードで実行する",
+      "request_plan の task_type / research_question / sources_used / method / validation_plan / uncertainty / limitations を必ず具体化する",
       "request_plan の research_validation に assumptions / approximation_strategy / baseline_methods / validation_checks / failure_modes を必ず入れる",
       "論文レベルのフルスケール再現が 16 qubit / 120秒制限で無理な場合は、縮小インスタンスまたはベンチマーク版として実行し、できない理由を明示する",
       "可能な範囲で古典ベースライン、厳密対角化、小規模既知解、複数seed、収束履歴、制約充足などを検証する",
@@ -3568,10 +3969,115 @@ function withAdvancedSettings(
   ].join("\n");
 }
 
+function withAttachmentContext(text: string, files: File[]): string {
+  if (files.length === 0) return text;
+
+  return [
+    text.trim(),
+    "",
+    "添付ファイル:",
+    ...files.map(
+      (file, index) =>
+        `- ${index + 1}. ${file.name} (${inferMediaType(file)}, ${formatFileSize(file.size)})`,
+    ),
+    "",
+    "添付ファイルの内容を参照し、画像・PDF・コード・データの情報を問題設定や検証に反映してください。",
+  ].join("\n");
+}
+
+function dedupeFiles(files: File[]): File[] {
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    const key = [file.name, file.size, file.lastModified].join(":");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fileToUIPart(file: File): Promise<FileUIPart> {
+  return {
+    type: "file",
+    mediaType: inferMediaType(file),
+    filename: file.name,
+    url: await readFileAsDataUrl(file),
+  };
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("ファイルを読み込めませんでした。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function inferMediaType(file: File): string {
+  if (file.type) return file.type;
+
+  const extension = getFileExtension(file.name);
+  return (
+    FALLBACK_MEDIA_TYPES[extension] ??
+    inferImageMediaTypeFromExtension(extension) ??
+    "application/octet-stream"
+  );
+}
+
+function inferImageMediaTypeFromExtension(extension: string): string | null {
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "png") return "image/png";
+  if (extension === "gif") return "image/gif";
+  if (extension === "webp") return "image/webp";
+  if (extension === "svg") return "image/svg+xml";
+  return null;
+}
+
+function getFileExtension(filename: string): string {
+  const lastSegment = filename.split(/[\\/]/).pop() ?? filename;
+  const dotIndex = lastSegment.lastIndexOf(".");
+  if (dotIndex < 0 || dotIndex === lastSegment.length - 1) return "";
+  return lastSegment.slice(dotIndex + 1).toLowerCase();
+}
+
+function fileExtensionLabel(filename: string): string {
+  const extension = getFileExtension(filename);
+  return extension ? extension.slice(0, 5).toUpperCase() : "FILE";
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toLocaleString("ja-JP", {
+    maximumFractionDigits: value >= 10 ? 0 : 1,
+  })} ${units[unitIndex]}`;
+}
+
 function getFrameworkLabel(framework: QuantumFramework): string {
   if (framework === "pennylane") return "PennyLane";
   if (framework === "cirq") return "Cirq";
   return "Qiskit";
+}
+
+function getTaskTypeLabel(taskType: NonNullable<PlanShape["task_type"]>): string {
+  const labels: Record<NonNullable<PlanShape["task_type"]>, string> = {
+    literature_review: "文献調査",
+    derivation_check: "数式確認",
+    data_analysis: "データ解析",
+    quantum_simulation: "量子シミュレーション",
+    paper_reproduction: "論文再現",
+    experiment_design: "実験設計",
+    general_research: "汎用研究",
+    other: "その他",
+  };
+  return labels[taskType] ?? taskType;
 }
 
 function getFrameworkPreferenceLabel(framework: FrameworkPreference): string {
