@@ -217,6 +217,23 @@ def build_prompt(problem: dict, framework: str) -> str:
     return "\n\n".join(parts)
 
 
+def build_retry_prompt(base_prompt: str, kl_value: float, attempt: int) -> str:
+    """
+    KL が閾値を超えた場合のフィードバックプロンプト。
+    QuanBench+ の feedback loop に相当する外側リトライ用。
+    """
+    feedback = (
+        f"--- フィードバック（{attempt} 回目の試行）---\n"
+        f"前回の実装では測定分布が正解と異なっていました。\n"
+        f"KL divergence = {kl_value:.4f}（合格閾値: {KL_THRESHOLD}）\n"
+        f"以下を確認して修正してください:\n"
+        f"- ビット順・測定対象 qubit が正しいか\n"
+        f"- 回路の初期状態・ゲートの順序が正しいか\n"
+        f"- shots = {SHOTS} で再実行すること"
+    )
+    return base_prompt + "\n\n" + feedback
+
+
 # ── namekoQ 出力 → 確率ベクトル変換 ───────────────────────────────────────────
 
 def result_to_prob_vector(
@@ -406,6 +423,10 @@ def main() -> None:
         "--resume", default=None,
         help="途中から再開する場合、既存の結果 JSON ファイルを指定",
     )
+    parser.add_argument(
+        "--fb-loops", type=int, default=1,
+        help="KL 失敗時のリトライ上限（1=リトライなし、3=QuanBench+ FB Loop 相当）",
+    )
     args = parser.parse_args()
 
     frameworks = FRAMEWORKS if args.framework == "all" else [args.framework]
@@ -450,6 +471,7 @@ def main() -> None:
     for idx, problem in enumerate(pending):
         fw = problem["framework"]
         task_id = problem["task_id"]
+        canonical = canonical_outputs.get(task_id)
 
         print(
             f"[{len(results) + 1:3d}/{len(all_problems)}] {fw:12s} task={task_id} [{problem.get('category','?')[:16]:16s}]",
@@ -457,19 +479,38 @@ def main() -> None:
             flush=True,
         )
 
-        prompt = build_prompt(problem, fw)
-        namekoq_result = call_namekoq(
-            args.namekoq_url, prompt, fw, args.model_tier,
-        )
-        canonical = canonical_outputs.get(task_id)
-        record = evaluate_one(problem, namekoq_result, canonical)
+        # KL フィードバックループ（QuanBench+ FB Loop 相当）
+        base_prompt = build_prompt(problem, fw)
+        prompt = base_prompt
+        record = None
+        for attempt in range(1, args.fb_loops + 1):
+            namekoq_result = call_namekoq(
+                args.namekoq_url, prompt, fw, args.model_tier,
+            )
+            candidate = evaluate_one(problem, namekoq_result, canonical)
+
+            # 初回 or 今回の方が KL が小さければ採用
+            prev_kl = record.get("kl_divergence") if record else float("inf")
+            curr_kl = candidate.get("kl_divergence") if candidate.get("kl_divergence") is not None else float("inf")
+            if record is None or curr_kl < prev_kl:
+                record = candidate
+
+            if record.get("passed"):
+                break  # 合格したのでループ終了
+
+            # 次の試行用フィードバックプロンプトを構築
+            if attempt < args.fb_loops and record.get("kl_divergence") is not None:
+                prompt = build_retry_prompt(base_prompt, record["kl_divergence"], attempt)
+                time.sleep(args.delay)
+
         results.append(record)
 
         status = "✓" if record["passed"] else "✗"
         kl_str = f"KL={record['kl_divergence']:.4f}" if record["kl_divergence"] is not None else "KL=n/a"
         ms = record.get("duration_ms")
         time_str = f"{ms / 1000:.1f}s" if ms else ""
-        print(f"{status}  {kl_str}  steps={record.get('step_count', '?')}  {time_str}")
+        retry_str = f" (試行{attempt})" if args.fb_loops > 1 and not record["passed"] else ""
+        print(f"{status}  {kl_str}  steps={record.get('step_count', '?')}  {time_str}{retry_str}")
 
         # 中間保存
         with open(output_path, "w", encoding="utf-8") as f:
