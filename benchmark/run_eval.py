@@ -217,20 +217,34 @@ def build_prompt(problem: dict, framework: str) -> str:
     return "\n\n".join(parts)
 
 
-def build_retry_prompt(base_prompt: str, kl_value: float, attempt: int) -> str:
+def build_retry_prompt(base_prompt: str, namekoq_result: dict, attempt: int) -> str:
     """
-    KL が閾値を超えた場合のフィードバックプロンプト。
-    QuanBench+ の feedback loop に相当する外側リトライ用。
+    QuanBench+ feedback_loop/api.py の build_feedback_message に準拠。
+
+    - 実行エラー時: エラーメッセージを渡す
+    - KL 失敗時:   実際の出力分布を渡す（KL 値は渡さない）
     """
-    feedback = (
-        f"--- フィードバック（{attempt} 回目の試行）---\n"
-        f"前回の実装では測定分布が正解と異なっていました。\n"
-        f"KL divergence = {kl_value:.4f}（合格閾値: {KL_THRESHOLD}）\n"
-        f"以下を確認して修正してください:\n"
-        f"- ビット順・測定対象 qubit が正しいか\n"
-        f"- 回路の初期状態・ゲートの順序が正しいか\n"
-        f"- shots = {SHOTS} で再実行すること"
-    )
+    ok = namekoq_result.get("ok", False)
+    error = namekoq_result.get("error")
+    sim_result = namekoq_result.get("simulationResult")
+
+    if not ok and error:
+        # compiled but failed at runtime / timeout
+        feedback = (
+            f"--- フィードバック（試行 {attempt} 回目）---\n"
+            f"前回のコードは実行中にエラーが発生しました。\n\n"
+            f"エラー内容:\n{error}\n\n"
+            f"修正して再度実装してください。shots = {SHOTS} で実行すること。"
+        )
+    else:
+        # code ran but output does not match canonical
+        output_str = str(sim_result)[:2000] if sim_result is not None else "(出力なし)"
+        feedback = (
+            f"--- フィードバック（試行 {attempt} 回目）---\n"
+            f"前回のコードは実行できましたが、出力が正解と一致していませんでした。\n\n"
+            f"前回の出力:\n{output_str}\n\n"
+            f"修正して再度実装してください。shots = {SHOTS} で実行すること。"
+        )
     return base_prompt + "\n\n" + feedback
 
 
@@ -424,8 +438,8 @@ def main() -> None:
         help="途中から再開する場合、既存の結果 JSON ファイルを指定",
     )
     parser.add_argument(
-        "--fb-loops", type=int, default=1,
-        help="KL 失敗時のリトライ上限（1=リトライなし、3=QuanBench+ FB Loop 相当）",
+        "--fb-loops", type=int, default=5,
+        help="失敗時のリトライ上限（QuanBench+ 論文準拠デフォルト=5、1=リトライなし）",
     )
     args = parser.parse_args()
 
@@ -479,10 +493,11 @@ def main() -> None:
             flush=True,
         )
 
-        # KL フィードバックループ（QuanBench+ FB Loop 相当）
+        # KL フィードバックループ（QuanBench+ feedback_loop/api.py 準拠）
         base_prompt = build_prompt(problem, fw)
         prompt = base_prompt
         record = None
+        last_namekoq_result = None
         for attempt in range(1, args.fb_loops + 1):
             namekoq_result = call_namekoq(
                 args.namekoq_url, prompt, fw, args.model_tier,
@@ -494,13 +509,15 @@ def main() -> None:
             curr_kl = candidate.get("kl_divergence") if candidate.get("kl_divergence") is not None else float("inf")
             if record is None or curr_kl < prev_kl:
                 record = candidate
+                last_namekoq_result = namekoq_result
 
             if record.get("passed"):
                 break  # 合格したのでループ終了
 
             # 次の試行用フィードバックプロンプトを構築
-            if attempt < args.fb_loops and record.get("kl_divergence") is not None:
-                prompt = build_retry_prompt(base_prompt, record["kl_divergence"], attempt)
+            # 実行エラー・KL 失敗どちらでもリトライ（論文準拠）
+            if attempt < args.fb_loops:
+                prompt = build_retry_prompt(base_prompt, last_namekoq_result or namekoq_result, attempt)
                 time.sleep(args.delay)
 
         results.append(record)
